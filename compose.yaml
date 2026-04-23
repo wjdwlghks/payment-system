@@ -1,0 +1,78 @@
+services:
+  merchant:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: merchant
+    container_name: merchant
+    ports:
+      - "8081:8080"
+    depends_on:
+      - payment
+
+  payment:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: payment
+    container_name: payment
+    ports:
+      - "8082:8080"
+    environment:
+      MYSQL_HOST: payment-mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: payment
+      MYSQL_USER: payment
+      MYSQL_PASSWORD: payment
+      CARD_BASE_URL: http://card:8080
+      FDS_BASE_URL: http://fds:8080
+    depends_on:
+      payment-mysql:
+        condition: service_healthy
+      fds:
+        condition: service_started
+      card:
+        condition: service_started
+
+  fds:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: fds
+    container_name: fds
+    ports:
+      - "8083:8080"
+
+  card:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: card
+    container_name: card
+    ports:
+      - "8084:8080"
+
+  payment-mysql:
+    image: mysql:8.4
+    container_name: payment-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: payment
+      MYSQL_USER: payment
+      MYSQL_PASSWORD: payment
+      MYSQL_ROOT_PASSWORD: root
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-upayment", "-ppayment"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - payment-mysql-data:/var/lib/mysql
+
+volumes:
+  payment-mysql-data:

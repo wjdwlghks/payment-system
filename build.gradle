@@ -1,0 +1,52 @@
+plugins {
+    id 'base'
+    id 'org.springframework.boot' version '4.0.5' apply false
+}
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'org.springframework.boot'
+
+    group = 'com.example'
+    version = '1.0.0-SNAPSHOT'
+
+    java {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        implementation 'org.springframework.boot:spring-boot-starter-web:4.0.5'
+        compileOnly 'org.projectlombok:lombok:1.18.38'
+        annotationProcessor 'org.projectlombok:lombok:1.18.38'
+        testCompileOnly 'org.projectlombok:lombok:1.18.38'
+        testAnnotationProcessor 'org.projectlombok:lombok:1.18.38'
+        testImplementation 'org.springframework.boot:spring-boot-starter-test:4.0.5'
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+
+    tasks.named('bootJar') {
+        archiveFileName = "${project.name}.jar"
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
+}
+
+project(':payment') {
+    dependencies {
+        implementation 'org.springframework.boot:spring-boot-starter-data-jpa:4.0.5'
+        implementation 'org.springframework.boot:spring-boot-starter-flyway:4.0.5'
+        implementation 'org.flywaydb:flyway-core:11.7.2'
+        implementation 'org.flywaydb:flyway-mysql:11.7.2'
+        runtimeOnly 'com.mysql:mysql-connector-j:9.3.0'
+    }
+}

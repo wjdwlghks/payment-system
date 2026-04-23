@@ -1,0 +1,4 @@
+rootProject.name = 'payment-system'
+
+include 'merchant', 'payment', 'fds', 'card'
+

@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: payment
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:payment-mysql}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:payment}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${MYSQL_USER:payment}
+    password: ${MYSQL_PASSWORD:payment}
+  flyway:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+payment:
+  card:
+    base-url: ${CARD_BASE_URL:http://card:8080}
+  fds:
+    base-url: ${FDS_BASE_URL:http://fds:8080}
