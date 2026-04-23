@@ -1,4 +1,17 @@
 spring:
   application:
     name: card
-
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:card-mysql}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:card}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${MYSQL_USER:card}
+    password: ${MYSQL_PASSWORD:card}
+  flyway:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC

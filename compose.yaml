@@ -45,6 +45,15 @@ services:
     container_name: fds
     ports:
       - "8083:8080"
+    environment:
+      MYSQL_HOST: fds-mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: fds
+      MYSQL_USER: fds
+      MYSQL_PASSWORD: fds
+    depends_on:
+      fds-mysql:
+        condition: service_healthy
 
   card:
     build:
@@ -55,6 +64,15 @@ services:
     container_name: card
     ports:
       - "8084:8080"
+    environment:
+      MYSQL_HOST: card-mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: card
+      MYSQL_USER: card
+      MYSQL_PASSWORD: card
+    depends_on:
+      card-mysql:
+        condition: service_healthy
 
   payment-mysql:
     image: mysql:8.4
@@ -74,5 +92,43 @@ services:
     volumes:
       - payment-mysql-data:/var/lib/mysql
 
+  card-mysql:
+    image: mysql:8.4
+    container_name: card-mysql
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_DATABASE: card
+      MYSQL_USER: card
+      MYSQL_PASSWORD: card
+      MYSQL_ROOT_PASSWORD: root
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ucard", "-pcard"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - card-mysql-data:/var/lib/mysql
+
+  fds-mysql:
+    image: mysql:8.4
+    container_name: fds-mysql
+    ports:
+      - "3308:3306"
+    environment:
+      MYSQL_DATABASE: fds
+      MYSQL_USER: fds
+      MYSQL_PASSWORD: fds
+      MYSQL_ROOT_PASSWORD: root
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ufds", "-pfds"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - fds-mysql-data:/var/lib/mysql
+
 volumes:
   payment-mysql-data:
+  card-mysql-data:
+  fds-mysql-data:
