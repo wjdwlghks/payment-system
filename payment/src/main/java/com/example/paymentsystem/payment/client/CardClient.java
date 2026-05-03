@@ -14,7 +14,7 @@ public class CardClient {
 
     public CardAuthResponse authorize(CardAuthRequest request) {
         return cardRestClient.post()
-                .uri("/v1/card/auth")
+                .uri("/v1/authorizations")
                 .body(request)
                 .retrieve()
                 .body(CardAuthResponse.class);

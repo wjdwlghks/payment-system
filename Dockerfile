@@ -13,6 +13,7 @@ COPY merchant/src merchant/src
 COPY payment/src payment/src
 COPY fds/src fds/src
 COPY card/src card/src
+COPY failure/src failure/src
 RUN ./gradlew --no-daemon :${SERVICE_NAME}:clean :${SERVICE_NAME}:bootJar
 
 FROM ${RUNTIME_IMAGE}

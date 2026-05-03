@@ -53,10 +53,21 @@ project(':payment') {
 
 configure([project(':card'), project(':fds')]) {
     dependencies {
+        implementation project(':failure')
         implementation 'org.springframework.boot:spring-boot-starter-data-jpa:4.0.5'
         implementation 'org.springframework.boot:spring-boot-starter-flyway:4.0.5'
         implementation 'org.flywaydb:flyway-core:11.7.2'
         implementation 'org.flywaydb:flyway-mysql:11.7.2'
         runtimeOnly 'com.mysql:mysql-connector-j:9.3.0'
+    }
+}
+
+project(':failure') {
+    tasks.named('bootJar') {
+        enabled = false
+    }
+
+    tasks.named('jar') {
+        enabled = true
     }
 }
