@@ -13,10 +13,11 @@ public class FdsClient {
     private final RestClient fdsRestClient;
 
     public FdsCheckResponse check(FdsCheckRequest request) {
-        return fdsRestClient.post()
+        FdsCheckResponse response = fdsRestClient.post()
                 .uri("/v1/fraud-checks")
                 .body(request)
                 .retrieve()
                 .body(FdsCheckResponse.class);
+        return response;
     }
 }

@@ -12,6 +12,7 @@ public class CardClientConfig {
     RestClient cardRestClient(
             @Value("${payment.card.base-url}") String cardBaseUrl
     ) {
-        return RestClient.builder().baseUrl(cardBaseUrl).build();
+        RestClient restClient = RestClient.builder().baseUrl(cardBaseUrl).build();
+        return restClient;
     }
 }

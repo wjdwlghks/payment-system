@@ -14,14 +14,15 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+
+import lombok.*;
 
 @Entity
 @Table(name = "`transaction`")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor
+@Builder
 public class PaymentTransaction {
 
     @Id
@@ -54,19 +55,6 @@ public class PaymentTransaction {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
-
-    public PaymentTransaction(
-            PaymentIntent paymentIntent,
-            TransactionType type,
-            Long amount,
-            String idempotentKey
-    ) {
-        this.paymentIntent = paymentIntent;
-        this.type = type;
-        this.status = TransactionStatus.REQUESTED;
-        this.amount = amount;
-        this.idempotentKey = idempotentKey;
-    }
 
     @PrePersist
     void prePersist() {

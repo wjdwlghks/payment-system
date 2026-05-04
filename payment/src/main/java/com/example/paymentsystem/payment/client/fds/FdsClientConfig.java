@@ -10,7 +10,7 @@ public class FdsClientConfig {
 
     @Bean
     RestClient fdsRestClient(@Value("${payment.fds.base-url}") String fdsBaseUrl) {
-        return RestClient.builder().baseUrl(fdsBaseUrl).build();
+        RestClient restClient = RestClient.builder().baseUrl(fdsBaseUrl).build();
+        return restClient;
     }
 }
-

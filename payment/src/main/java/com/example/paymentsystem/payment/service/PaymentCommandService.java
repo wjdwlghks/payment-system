@@ -24,7 +24,7 @@ public class PaymentCommandService {
     private final PaymentTransactionRepository paymentTransactionRepository;
 
     @Transactional
-    public AuthRequestContext createAuthRequest(PaymentRequest request, String idempotencyKey) {
+    public AuthRequestContext createAuthRequest(PaymentRequest request) {
         PaymentIntent paymentIntent = new PaymentIntent(
                 UUID.randomUUID().toString(),
                 request.orderId(),
@@ -33,12 +33,13 @@ public class PaymentCommandService {
         );
         paymentIntentRepository.save(paymentIntent);
 
-        PaymentTransaction transaction = new PaymentTransaction(
-                paymentIntent,
-                TransactionType.AUTH,
-                request.amount(),
-                idempotencyKey
-        );
+        PaymentTransaction transaction = PaymentTransaction.builder()
+                .paymentIntent(paymentIntent)
+                .type(TransactionType.AUTH)
+                .status(TransactionStatus.REQUESTED)
+                .amount(request.amount())
+                .build();
+
         paymentTransactionRepository.save(transaction);
 
         return new AuthRequestContext(
@@ -52,8 +53,8 @@ public class PaymentCommandService {
     }
 
     @Transactional
-    public PaymentResponse completeAuth(Long paymentIntentId, Long transactionId, CardAuthResponse cardResponse) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentIntentId);
+    public PaymentResponse completeAuth(String paymentKey, Long transactionId, CardAuthResponse cardResponse) {
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
         PaymentTransaction transaction = getTransaction(transactionId);
 
         if (cardResponse.success()) {
@@ -73,12 +74,13 @@ public class PaymentCommandService {
                 .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + paymentKey));
 
         paymentIntent.markFdsRequested();
-        PaymentTransaction transaction = new PaymentTransaction(
-                paymentIntent,
-                TransactionType.FDS,
-                paymentIntent.getAmount(),
-                null
-        );
+        PaymentTransaction transaction = PaymentTransaction.builder()
+                .paymentIntent(paymentIntent)
+                .type(TransactionType.FDS)
+                .amount(paymentIntent.getAmount())
+                .status(TransactionStatus.REQUESTED)
+                .build();
+
         paymentTransactionRepository.save(transaction);
 
         return new FdsRequestContext(
@@ -92,8 +94,8 @@ public class PaymentCommandService {
     }
 
     @Transactional
-    public PaymentResponse failFds(Long paymentIntentId, Long transactionId, FdsCheckResponse fdsResponse) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentIntentId);
+    public PaymentResponse failFds(String paymentKey, Long transactionId, FdsCheckResponse fdsResponse) {
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
         PaymentTransaction transaction = getTransaction(transactionId);
 
         transaction.markFail(fdsResponse.externalId());
@@ -104,12 +106,11 @@ public class PaymentCommandService {
 
     @Transactional
     public CaptureRequestContext completeFdsAndCreateCaptureRequest(
-            Long paymentIntentId,
+            String paymentKey,
             Long fdsTransactionId,
-            FdsCheckResponse fdsResponse,
-            String idempotencyKey
+            FdsCheckResponse fdsResponse
     ) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentIntentId);
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
         PaymentTransaction fdsTransaction = getTransaction(fdsTransactionId);
 
         fdsTransaction.markSucceeded(fdsResponse.externalId());
@@ -123,12 +124,13 @@ public class PaymentCommandService {
                 )
                 .orElseThrow(() -> new IllegalStateException("Succeeded auth transaction not found"));
 
-        PaymentTransaction captureTransaction = new PaymentTransaction(
-                paymentIntent,
-                TransactionType.CAPTURE,
-                paymentIntent.getAmount(),
-                idempotencyKey
-        );
+        PaymentTransaction captureTransaction = PaymentTransaction.builder()
+                .paymentIntent(paymentIntent)
+                .type(TransactionType.CAPTURE)
+                .status(TransactionStatus.REQUESTED)
+                .amount(paymentIntent.getAmount())
+                .build();
+
         paymentTransactionRepository.save(captureTransaction);
 
         return new CaptureRequestContext(
@@ -143,11 +145,11 @@ public class PaymentCommandService {
 
     @Transactional
     public PaymentResponse completeCapture(
-            Long paymentIntentId,
+            String paymentKey,
             Long captureTransactionId,
             CardCaptureResponse captureResponse
     ) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentIntentId);
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
         PaymentTransaction captureTransaction = getTransaction(captureTransactionId);
 
         if (captureResponse.success()) {
@@ -161,9 +163,9 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    private PaymentIntent getPaymentIntent(Long paymentIntentId) {
-        return paymentIntentRepository.findById(paymentIntentId)
-                .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + paymentIntentId));
+    public PaymentIntent getPaymentIntent(String paymentKey) {
+        return paymentIntentRepository.findByPaymentKey(paymentKey)
+                .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + paymentKey));
     }
 
     private PaymentTransaction getTransaction(Long transactionId) {
@@ -181,4 +183,3 @@ public class PaymentCommandService {
         );
     }
 }
-
