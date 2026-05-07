@@ -1,6 +1,5 @@
 package com.example.paymentsystem.payment.controller;
 
-import com.example.paymentsystem.payment.dto.ConfirmApiResult;
 import com.example.paymentsystem.payment.dto.PaymentApiResult;
 import com.example.paymentsystem.payment.dto.PaymentRequest;
 import com.example.paymentsystem.payment.service.PaymentService;

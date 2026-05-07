@@ -1,4 +1,4 @@
-package com.example.paymentsystem.payment.service;
+package com.example.paymentsystem.payment.dto;
 
 public record AuthRequestContext(
         Long paymentIntentId,

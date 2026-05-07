@@ -1,31 +1,42 @@
 package com.example.paymentsystem.card.service;
 
 import com.example.paymentsystem.card.domain.CardAuthorization;
+import com.example.paymentsystem.card.dto.CardApiResult;
 import com.example.paymentsystem.card.dto.CardAuthRequest;
 import com.example.paymentsystem.card.dto.CardAuthResponse;
-import com.example.paymentsystem.card.repository.CardAuthorizationRepository;
-import java.time.Instant;
-import java.util.UUID;
+import com.example.paymentsystem.card.dto.ErrorResponse;
+
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 @RequiredArgsConstructor
 public class CardAuthService {
 
-    private final CardAuthorizationRepository cardAuthorizationRepository;
+    private final IdempotentService idempotentService;
+    private final ObjectMapper objectMapper;
 
-    @Transactional
-    public CardAuthResponse authorize(CardAuthRequest request) {
-        Instant authorizedAt = Instant.now();
-        CardAuthorization authorization = cardAuthorizationRepository.save(new CardAuthorization(
-                "auth-" + UUID.randomUUID(),
-                request.paymentKey(),
-                request.amount(),
-                authorizedAt
-        ));
+    public CardApiResult authorize(CardAuthRequest request) {
 
-        return new CardAuthResponse(true, authorization.getAuthId(), authorizedAt);
+        String authHash = DigestUtils.sha256Hex(
+            request.merchantId() + ":" + request.orderId() + ":" + request.amount()
+        );
+
+        CardAuthorization cardAuth = idempotentService.tryInsert(request, authHash);
+
+        if (!cardAuth.getAuthHash().equals(authHash)) {
+            return errorResult(409, "Request Hash Mismatch");
+        }
+
+        CardAuthResponse response = new CardAuthResponse(true, cardAuth.getAuthId(), cardAuth.getAuthorizedAt());
+        String responseBody = objectMapper.writeValueAsString(response);
+        return new CardApiResult(200, responseBody);
+    }
+
+    private CardApiResult errorResult(int statusCode, String message) {
+        String responseBody = objectMapper.writeValueAsString(new ErrorResponse(message));
+        return new CardApiResult(statusCode, responseBody);
     }
 }

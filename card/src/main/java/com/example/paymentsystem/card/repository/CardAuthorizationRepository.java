@@ -7,4 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface CardAuthorizationRepository extends JpaRepository<CardAuthorization, Long> {
 
     Optional<CardAuthorization> findByAuthId(String authId);
+    Optional<CardAuthorization> findByAuthIdempotentKey(String authIdempotentKey);
 }

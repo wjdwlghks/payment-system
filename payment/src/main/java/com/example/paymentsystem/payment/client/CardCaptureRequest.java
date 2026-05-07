@@ -1,7 +1,7 @@
 package com.example.paymentsystem.payment.client;
 
 public record CardCaptureRequest(
-        String paymentKey,
+        String captureIdempotentKey,
         String orderId,
         Long amount
 ) {

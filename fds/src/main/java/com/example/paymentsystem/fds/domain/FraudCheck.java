@@ -27,6 +27,12 @@ public class FraudCheck {
     @Column(name = "idempotency_key", nullable = false, length = 150)
     private String idempotencyKey;
 
+    @Column(name = "fds_id", nullable = false, length = 100, unique = true)
+    private String fdsId;
+
+    @Column(nullable = false, length = 64)
+    private String hash;
+
     @Column(name = "payment_key", nullable = false, length = 100)
     private String paymentKey;
 
@@ -40,8 +46,10 @@ public class FraudCheck {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    public FraudCheck(String paymentKey, Long amount, FraudDecision decision) {
+    public FraudCheck(String fdsId, String hash, String paymentKey, Long amount, FraudDecision decision) {
         this.idempotencyKey = paymentKey + ":fds";
+        this.fdsId = fdsId;
+        this.hash = hash;
         this.paymentKey = paymentKey;
         this.amount = amount;
         this.decision = decision;

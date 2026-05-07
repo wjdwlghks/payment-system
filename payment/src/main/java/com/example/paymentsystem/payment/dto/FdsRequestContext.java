@@ -1,11 +1,11 @@
-package com.example.paymentsystem.payment.service;
+package com.example.paymentsystem.payment.dto;
 
-public record CaptureRequestContext(
+public record FdsRequestContext(
         Long paymentIntentId,
         Long transactionId,
-        String authorizationId,
         String paymentKey,
         String orderId,
+        String merchantId,
         Long amount
 ) {
 }

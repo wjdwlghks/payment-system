@@ -15,8 +15,6 @@ import com.example.paymentsystem.payment.domain.PaymentIntent;
 import com.example.paymentsystem.payment.dto.*;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
@@ -55,10 +53,10 @@ public class PaymentService {
             return new PaymentApiResult(e.getResponseCode(), e.getResponseBody());
         }
 
-
         AuthRequestContext context = paymentCommandService.createAuthRequest(request);
+        String authIdempotentKey = context.paymentKey() + ":auth";
         CardAuthResponse cardResponse = cardClient.authorize(new CardAuthRequest(
-                context.paymentKey(),
+                authIdempotentKey,
                 context.orderId(),
                 context.merchantId(),
                 context.amount()
@@ -124,10 +122,11 @@ public class PaymentService {
                 fdsResponse
         );
 
+        String captureIdempotentKey = captureContext.paymentKey() + ":capture";
         CardCaptureResponse captureResponse = cardClient.capture(
                 captureContext.authorizationId(),
                 new CardCaptureRequest(
-                        captureContext.paymentKey(),
+                        captureIdempotentKey,
                         captureContext.orderId(),
                         captureContext.amount()
                 )

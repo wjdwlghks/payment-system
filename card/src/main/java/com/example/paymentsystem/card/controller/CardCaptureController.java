@@ -1,9 +1,11 @@
 package com.example.paymentsystem.card.controller;
 
 import com.example.paymentsystem.card.dto.CardCaptureRequest;
-import com.example.paymentsystem.card.dto.CardCaptureResponse;
+import com.example.paymentsystem.card.dto.CardApiResult;
 import com.example.paymentsystem.card.service.CardCaptureService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,10 +20,13 @@ public class CardCaptureController {
     private final CardCaptureService cardCaptureService;
 
     @PostMapping("/{authorizationId}/capture")
-    public CardCaptureResponse capture(
+    public ResponseEntity<String> capture(
             @PathVariable String authorizationId,
             @RequestBody CardCaptureRequest request
     ) {
-        return cardCaptureService.capture(authorizationId, request);
+        CardApiResult result = cardCaptureService.capture(authorizationId, request);
+        return ResponseEntity.status(result.statusCode())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(result.body());
     }
 }

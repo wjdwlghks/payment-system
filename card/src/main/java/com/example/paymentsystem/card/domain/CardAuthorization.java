@@ -11,14 +11,15 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+
+import lombok.*;
 
 @Entity
 @Table(name = "card_authorization")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Builder
+@AllArgsConstructor(access = AccessLevel.PROTECTED)
 public class CardAuthorization {
 
     @Id
@@ -28,11 +29,20 @@ public class CardAuthorization {
     @Column(name = "auth_id", nullable = false, length = 100, unique = true)
     private String authId;
 
-    @Column(name = "auth_idempotent_key", nullable = false, length = 150)
+    @Column(name = "auth_idempotent_key", nullable = false, length = 150, unique = true)
     private String authIdempotentKey;
 
-    @Column(name = "capture_idempotency_key", length = 150)
-    private String captureIdempotencyKey;
+    @Column(name = "auth_hash", nullable = false, length = 64)
+    private String authHash;
+
+    @Column(name = "capture_idempotent_key", length = 150, unique = true)
+    private String captureIdempotentKey;
+
+    @Column(name = "capture_id", length = 100, unique = true)
+    private String captureId;
+
+    @Column(name = "capture_hash", length = 64)
+    private String captureHash;
 
     @Column(nullable = false)
     private Long amount;
@@ -53,14 +63,6 @@ public class CardAuthorization {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    public CardAuthorization(String authId, String paymentKey, Long amount, Instant authorizedAt) {
-        this.authId = authId;
-        this.authIdempotentKey = paymentKey + ":auth";
-        this.amount = amount;
-        this.status = CardAuthorizationStatus.AUTHORIZED;
-        this.authorizedAt = authorizedAt;
-    }
-
     @PrePersist
     void prePersist() {
         Instant now = Instant.now();
@@ -73,8 +75,10 @@ public class CardAuthorization {
         this.updatedAt = Instant.now();
     }
 
-    public void capture(String paymentKey, Instant capturedAt) {
-        this.captureIdempotencyKey = paymentKey + ":capture";
+    public void capture(String captureId, String captureIdempotentKey, String captureHash, Instant capturedAt) {
+        this.captureId = captureId;
+        this.captureIdempotentKey = captureIdempotentKey;
+        this.captureHash = captureHash;
         this.status = CardAuthorizationStatus.CAPTURED;
         this.capturedAt = capturedAt;
     }
