@@ -1,6 +1,6 @@
 package com.example.paymentsystem.card.dto;
 
-public record CardApiResult(
+public record ApiResult(
         int statusCode,
         String body
 ) {

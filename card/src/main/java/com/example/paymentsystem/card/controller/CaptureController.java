@@ -1,8 +1,8 @@
 package com.example.paymentsystem.card.controller;
 
-import com.example.paymentsystem.card.dto.CardCaptureRequest;
-import com.example.paymentsystem.card.dto.CardApiResult;
-import com.example.paymentsystem.card.service.CardCaptureService;
+import com.example.paymentsystem.card.dto.CaptureRequest;
+import com.example.paymentsystem.card.dto.ApiResult;
+import com.example.paymentsystem.card.service.CaptureService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -15,16 +15,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/v1/authorizations")
 @RequiredArgsConstructor
-public class CardCaptureController {
+public class CaptureController {
 
-    private final CardCaptureService cardCaptureService;
+    private final CaptureService captureService;
 
     @PostMapping("/{authorizationId}/capture")
     public ResponseEntity<String> capture(
             @PathVariable String authorizationId,
-            @RequestBody CardCaptureRequest request
+            @RequestBody CaptureRequest request
     ) {
-        CardApiResult result = cardCaptureService.capture(authorizationId, request);
+        ApiResult result = captureService.capture(authorizationId, request);
         return ResponseEntity.status(result.statusCode())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.body());

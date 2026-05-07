@@ -1,7 +1,7 @@
 package com.example.paymentsystem.card.service;
 
 import com.example.paymentsystem.card.domain.CardAuthorization;
-import com.example.paymentsystem.card.dto.CardAuthRequest;
+import com.example.paymentsystem.card.dto.AuthRequest;
 import com.example.paymentsystem.card.repository.CardAuthorizationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,7 +18,7 @@ public class IdempotentManager {
     private final CardAuthorizationRepository repository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CardAuthorization attemptInsert(CardAuthRequest request, String authHash) {
+    public CardAuthorization attemptInsert(AuthRequest request, String authHash) {
         Instant authorizedAt = Instant.now();
         CardAuthorization authorization = CardAuthorization.builder()
                 .authId("auth-" + UUID.randomUUID())

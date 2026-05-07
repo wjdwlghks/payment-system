@@ -1,6 +1,6 @@
 package com.example.paymentsystem.card.dto;
 
-public record CardCaptureRequest(
+public record CaptureRequest(
         String captureIdempotentKey,
         String orderId,
         Long amount

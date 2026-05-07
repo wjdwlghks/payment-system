@@ -1,6 +1,6 @@
 package com.example.paymentsystem.card.dto;
 
-public record CardCaptureResponse(
+public record CaptureResponse(
         boolean success,
         String externalId
 ) {

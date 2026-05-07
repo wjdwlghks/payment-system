@@ -1,9 +1,9 @@
 package com.example.paymentsystem.card.service;
 
 import com.example.paymentsystem.card.domain.CardAuthorization;
-import com.example.paymentsystem.card.dto.CardApiResult;
-import com.example.paymentsystem.card.dto.CardAuthRequest;
-import com.example.paymentsystem.card.dto.CardAuthResponse;
+import com.example.paymentsystem.card.dto.ApiResult;
+import com.example.paymentsystem.card.dto.AuthRequest;
+import com.example.paymentsystem.card.dto.AuthResponse;
 import com.example.paymentsystem.card.dto.ErrorResponse;
 
 import lombok.RequiredArgsConstructor;
@@ -13,12 +13,12 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 @RequiredArgsConstructor
-public class CardAuthService {
+public class AuthService {
 
     private final IdempotentService idempotentService;
     private final ObjectMapper objectMapper;
 
-    public CardApiResult authorize(CardAuthRequest request) {
+    public ApiResult authorize(AuthRequest request) {
 
         String authHash = DigestUtils.sha256Hex(
             request.merchantId() + ":" + request.orderId() + ":" + request.amount()
@@ -30,13 +30,13 @@ public class CardAuthService {
             return errorResult(409, "Request Hash Mismatch");
         }
 
-        CardAuthResponse response = new CardAuthResponse(true, cardAuth.getAuthId(), cardAuth.getAuthorizedAt());
+        AuthResponse response = new AuthResponse(true, cardAuth.getAuthId(), cardAuth.getAuthorizedAt());
         String responseBody = objectMapper.writeValueAsString(response);
-        return new CardApiResult(200, responseBody);
+        return new ApiResult(200, responseBody);
     }
 
-    private CardApiResult errorResult(int statusCode, String message) {
+    private ApiResult errorResult(int statusCode, String message) {
         String responseBody = objectMapper.writeValueAsString(new ErrorResponse(message));
-        return new CardApiResult(statusCode, responseBody);
+        return new ApiResult(statusCode, responseBody);
     }
 }

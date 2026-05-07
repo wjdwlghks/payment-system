@@ -1,6 +1,6 @@
 package com.example.paymentsystem.card.dto;
 
-public record CardAuthRequest(
+public record AuthRequest(
         String authIdempotentKey,
         String orderId,
         String merchantId,
