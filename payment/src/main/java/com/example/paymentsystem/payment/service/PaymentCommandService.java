@@ -56,13 +56,63 @@ public class PaymentCommandService {
         PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
         PaymentTransaction transaction = getTransaction(transactionId);
 
-        if (cardResponse.success()) {
-            transaction.markSucceeded(cardResponse.externalId());
-            paymentIntent.markAuthReady(cardResponse.authorizedAt());
-        } else {
-            transaction.markFail(cardResponse.externalId());
-            paymentIntent.markAuthFailed();
-        }
+        transaction.markSucceeded(cardResponse.externalId());
+        paymentIntent.markAuthReady(cardResponse.authorizedAt());
+
+        return toResponse(paymentIntent);
+    }
+
+    @Transactional
+    public PaymentResponse failAuth(String paymentKey, Long transactionId) {
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
+        PaymentTransaction transaction = getTransaction(transactionId);
+
+        paymentIntent.markAuthFailed();
+        transaction.markFailWithoutResponse();
+
+        return toResponse(paymentIntent);
+    }
+
+    @Transactional
+    public PaymentResponse failAuth(String paymentKey, Long transactionId, CardAuthResponse cardResponse) {
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
+        PaymentTransaction transaction = getTransaction(transactionId);
+
+        paymentIntent.markAuthFailed();
+        transaction.markFail(cardResponse.externalId());
+
+        return toResponse(paymentIntent);
+    }
+
+    @Transactional
+    public PaymentResponse unknownAuth(String paymentKey,  Long transactionId) {
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
+        PaymentTransaction transaction = getTransaction(transactionId);
+
+        paymentIntent.markAuthUnknown();
+        transaction.markUnknown();
+
+        return toResponse(paymentIntent);
+    }
+
+    @Transactional
+    public PaymentResponse unknownFds(String paymentKey, Long transactionId) {
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
+        PaymentTransaction transaction = getTransaction(transactionId);
+
+        paymentIntent.markFdsUnknown();
+        transaction.markUnknown();
+
+        return toResponse(paymentIntent);
+    }
+
+    @Transactional
+    public PaymentResponse unknownCapture(String paymentKey, Long transcationId) {
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
+        PaymentTransaction transaction = getTransaction(transcationId);
+
+        paymentIntent.markCaptureUnknown();
+        transaction.markUnknown();
 
         return toResponse(paymentIntent);
     }
@@ -104,6 +154,39 @@ public class PaymentCommandService {
     }
 
     @Transactional
+    public PaymentResponse failFds(String paymentKey, Long transactionId) {
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
+        PaymentTransaction transaction = getTransaction(transactionId);
+
+        transaction.markFailWithoutResponse();
+        paymentIntent.markFdsFailed();
+
+        return toResponse(paymentIntent);
+    }
+
+    @Transactional
+    public PaymentResponse failCapture(String paymentKey, Long transactionId, CardCaptureResponse captureResponse) {
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
+        PaymentTransaction transaction = getTransaction(transactionId);
+
+        paymentIntent.markCaptureFailed();
+        transaction.markFail(captureResponse.externalId());
+
+        return toResponse(paymentIntent);
+    }
+
+    @Transactional
+    public PaymentResponse failCapture(String paymentKey, Long transactionId) {
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
+        PaymentTransaction transaction = getTransaction(transactionId);
+
+        paymentIntent.markCaptureFailed();
+        transaction.markFailWithoutResponse();
+
+        return toResponse(paymentIntent);
+    }
+
+    @Transactional
     public CaptureRequestContext completeFdsAndCreateCaptureRequest(
             String paymentKey,
             Long fdsTransactionId,
@@ -116,8 +199,8 @@ public class PaymentCommandService {
         paymentIntent.markCaptureRequested();
 
         PaymentTransaction authTransaction = paymentTransactionRepository
-                .findFirstByPaymentIntentIdAndTypeAndStatusOrderByIdDesc(
-                        paymentIntent.getId(),
+                .findByPaymentIntentAndTypeAndStatus(
+                        paymentIntent,
                         TransactionType.AUTH,
                         TransactionStatus.SUCCEEDED
                 )
@@ -151,13 +234,9 @@ public class PaymentCommandService {
         PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
         PaymentTransaction captureTransaction = getTransaction(captureTransactionId);
 
-        if (captureResponse.success()) {
-            captureTransaction.markSucceeded(captureResponse.externalId());
-            paymentIntent.markDone();
-        } else {
-            captureTransaction.markFail(captureResponse.externalId());
-            paymentIntent.markCaptureFailed();
-        }
+
+        captureTransaction.markSucceeded(captureResponse.externalId());
+        paymentIntent.markDone();
 
         return toResponse(paymentIntent);
     }
@@ -181,4 +260,5 @@ public class PaymentCommandService {
                 paymentIntent.getAuthorizedAt()
         );
     }
+
 }

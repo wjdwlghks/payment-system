@@ -98,4 +98,16 @@ public class PaymentIntent {
     public void markDone() {
         this.status = PaymentIntentStatus.DONE;
     }
+
+    public void markAuthUnknown() {
+        this.status = PaymentIntentStatus.UNKNOWN_AUTH;
+    }
+
+    public void markFdsUnknown() {
+        this.status = PaymentIntentStatus.UNKNOWN_FDS;
+    }
+
+    public void markCaptureUnknown() {
+        this.status = PaymentIntentStatus.UNKNOWN_CAPTURE;
+    }
 }

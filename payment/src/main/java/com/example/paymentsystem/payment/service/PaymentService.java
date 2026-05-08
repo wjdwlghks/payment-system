@@ -15,9 +15,13 @@ import com.example.paymentsystem.payment.domain.PaymentIntent;
 import com.example.paymentsystem.payment.dto.*;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.hc.client5.http.ConnectTimeoutException;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.ObjectMapper;
 
+import java.net.SocketTimeoutException;
 import java.util.Optional;
 
 @Service
@@ -53,25 +57,33 @@ public class PaymentService {
             return new PaymentApiResult(e.getResponseCode(), e.getResponseBody());
         }
 
-        AuthRequestContext context = paymentCommandService.createAuthRequest(request);
-        String authIdempotentKey = context.paymentKey() + ":auth";
-        CardAuthResponse cardResponse = cardClient.authorize(new CardAuthRequest(
-                authIdempotentKey,
-                context.orderId(),
-                context.merchantId(),
-                context.amount()
-        ));
+        AuthRequestContext authContext = paymentCommandService.createAuthRequest(request);
+        String authIdempotentKey = authContext.paymentKey() + ":auth";
 
-        PaymentResponse paymentResponse = paymentCommandService.completeAuth(
-                context.paymentKey(),
-                context.transactionId(),
-                cardResponse
+        CardAuthRequest authRequest = new CardAuthRequest(
+                authIdempotentKey,
+                authContext.orderId(),
+                authContext.merchantId(),
+                authContext.amount()
         );
 
-        String responseBody = objectMapper.writeValueAsString(paymentResponse);
-        idempotentService.complete(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, 200, responseBody);
+        try {
+            CardAuthResponse authResponse = cardClient.authorize(authRequest);
+            if (!authResponse.success()) {
+                return failAuth(idempotentKey, authContext, authResponse);
+            }
 
-        return new PaymentApiResult(200, responseBody);
+            return completeAuth(idempotentKey, authContext, authResponse);
+
+        } catch (ResourceAccessException e) {
+            if (isReadTimeout(e)) {
+                return unknownAuth(idempotentKey, authContext);
+            }
+
+            return failAuth(idempotentKey, authContext);
+        } catch (RestClientResponseException e) {
+            return failAuth(idempotentKey, authContext);
+        }
     }
 
     public PaymentApiResult confirmPayment(String paymentKey) {
@@ -97,51 +109,150 @@ public class PaymentService {
         }
 
 
-        FdsRequestContext context = paymentCommandService.createFdsRequest(paymentKey);
-        FdsCheckResponse fdsResponse = fdsClient.check(new FdsCheckRequest(
-                context.paymentKey(),
-                context.orderId(),
-                context.merchantId(),
-                context.amount()
-        ));
+        FdsRequestContext fdsContext = paymentCommandService.createFdsRequest(paymentKey);
 
-        if (!fdsResponse.success()) {
-            PaymentResponse response = paymentCommandService.failFds(
-                    context.paymentKey(),
-                    context.transactionId(),
-                    fdsResponse
-            );
-            String responseBody = objectMapper.writeValueAsString(response);
-            idempotentService.complete(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, 200, responseBody);
-            return new PaymentApiResult(200, responseBody);
+        FdsCheckRequest checkRequest = new FdsCheckRequest(
+                fdsContext.paymentKey(),
+                fdsContext.orderId(),
+                fdsContext.merchantId(),
+                fdsContext.amount()
+        );
+
+        try {
+            FdsCheckResponse fdsResponse = fdsClient.check(checkRequest);
+            if (!fdsResponse.success()) {
+                return failFds(idempotentKey, fdsContext, fdsResponse);
+            }
+            return capture(idempotentKey, fdsContext, fdsResponse);
+
+        } catch (ResourceAccessException e) {
+            if (isReadTimeout(e)) {
+                return unknownFds(idempotentKey, fdsContext);
+            }
+
+            return failFds(idempotentKey, fdsContext);
+
+        } catch (RestClientResponseException e) {
+            return failFds(idempotentKey, fdsContext);
         }
+    }
 
+    private PaymentApiResult capture(String idempotentKey, FdsRequestContext fdsContext, FdsCheckResponse fdsResponse) {
         CaptureRequestContext captureContext = paymentCommandService.completeFdsAndCreateCaptureRequest(
-                context.paymentKey(),
-                context.transactionId(),
+                fdsContext.paymentKey(),
+                fdsContext.transactionId(),
                 fdsResponse
         );
 
-        String captureIdempotentKey = captureContext.paymentKey() + ":capture";
-        CardCaptureResponse captureResponse = cardClient.capture(
-                captureContext.authorizationId(),
-                new CardCaptureRequest(
-                        captureIdempotentKey,
-                        captureContext.orderId(),
-                        captureContext.amount()
-                )
+        String captureIdempotentKey = fdsContext.paymentKey() + ":capture";
+        CardCaptureRequest captureRequest = new CardCaptureRequest(
+                captureIdempotentKey,
+                captureContext.orderId(),
+                captureContext.amount()
         );
 
-        PaymentResponse response = paymentCommandService.completeCapture(
-                captureContext.paymentKey(),
-                captureContext.transactionId(),
-                captureResponse
-        );
+        try {
+            CardCaptureResponse captureResponse = cardClient.capture(captureContext.authorizationId(), captureRequest);
+            if (!captureResponse.success()) {
+                return failCapture(idempotentKey, captureContext, captureResponse);
+            }
+            return completeCapture(idempotentKey, captureContext, captureResponse);
 
-        String responseBody = objectMapper.writeValueAsString(response);
-        idempotentService.complete(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, 200, responseBody);
+        } catch (ResourceAccessException e) {
+            if (isReadTimeout(e)) {
+                return unknownCapture(idempotentKey, captureContext);
+            }
 
+            return failCapture(idempotentKey, captureContext);
+
+        } catch (RestClientResponseException e) {
+            return failCapture(idempotentKey, captureContext);
+        }
+    }
+
+    private PaymentApiResult completeCapture(String idempotentKey, CaptureRequestContext context, CardCaptureResponse captureResponse) {
+        PaymentResponse response = paymentCommandService.completeCapture(context.paymentKey(), context.transactionId(), captureResponse);
+        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, response);
+    }
+
+    private PaymentApiResult completeAuth(String idempotentKey, AuthRequestContext context, CardAuthResponse cardResponse) {
+        PaymentResponse response = paymentCommandService.completeAuth(context.paymentKey(), context.transactionId(), cardResponse);
+        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, response);
+    }
+
+    private PaymentApiResult failAuth(String idempotentKey, AuthRequestContext context) {
+        PaymentResponse response = paymentCommandService.failAuth(context.paymentKey(), context.transactionId());
+        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, response);
+    }
+
+    private PaymentApiResult failAuth(String idempotentKey, AuthRequestContext context, CardAuthResponse cardResponse) {
+        PaymentResponse response = paymentCommandService.failAuth(context.paymentKey(), context.transactionId(), cardResponse);
+        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, response);
+    }
+
+    private PaymentApiResult failFds(String idempotentKey, FdsRequestContext context) {
+        PaymentResponse response = paymentCommandService.failFds(context.paymentKey(), context.transactionId());
+        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, response);
+    }
+
+    private PaymentApiResult failFds(String idempotentKey, FdsRequestContext context, FdsCheckResponse fdsResponse) {
+        PaymentResponse response = paymentCommandService.failFds(context.paymentKey(), context.transactionId(), fdsResponse);
+        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, response);
+    }
+
+    private PaymentApiResult failCapture(String idempotentKey, CaptureRequestContext context, CardCaptureResponse captureResponse) {
+        PaymentResponse response = paymentCommandService.failCapture(context.paymentKey(), context.transactionId(), captureResponse);
+        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, response);
+    }
+
+    private PaymentApiResult failCapture(String idempotentKey, CaptureRequestContext context) {
+        PaymentResponse response = paymentCommandService.failCapture(context.paymentKey(), context.transactionId());
+        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, response);
+    }
+
+    private PaymentApiResult unknownAuth(String idempotentKey, AuthRequestContext context) {
+        PaymentResponse response = paymentCommandService.unknownAuth(context.paymentKey(), context.transactionId());
+        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, response);
+    }
+
+    private PaymentApiResult unknownFds(String idempotentKey, FdsRequestContext context) {
+         PaymentResponse response = paymentCommandService.unknownFds(context.paymentKey(), context.transactionId());
+         return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, response);
+    }
+
+    private PaymentApiResult unknownCapture(String idempotentKey, CaptureRequestContext context) {
+        PaymentResponse response = paymentCommandService.unknownCapture(context.paymentKey(), context.transactionId());
+        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, response);
+    }
+
+    private PaymentApiResult completeIdempotentRequest(
+            String idempotentKey,
+            IdempotencyOperation operation,
+            PaymentResponse paymentResponse
+    ) {
+        String responseBody = objectMapper.writeValueAsString(paymentResponse);
+        idempotentService.complete(idempotentKey, operation, 200, responseBody);
         return new PaymentApiResult(200, responseBody);
+    }
+
+    private boolean isReadTimeout(Throwable throwable) {
+        return isCausedBy(throwable, SocketTimeoutException.class)
+                && !isConnectTimeout(throwable);
+    }
+
+    private boolean isConnectTimeout(Throwable throwable) {
+        return isCausedBy(throwable, ConnectTimeoutException.class);
+    }
+
+    private boolean isCausedBy(Throwable throwable, Class<? extends Throwable> causeType) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (causeType.isInstance(current)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private PaymentApiResult errorResult(int statusCode, String message) {

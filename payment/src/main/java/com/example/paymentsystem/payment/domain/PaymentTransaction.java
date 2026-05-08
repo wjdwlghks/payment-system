@@ -77,4 +77,12 @@ public class PaymentTransaction {
         this.status = TransactionStatus.FAIL;
         this.externalId = externalId;
     }
+
+    public void markFailWithoutResponse() {
+        this.status = TransactionStatus.FAIL;
+    }
+
+    public void markUnknown() {
+        this.status = TransactionStatus.UNKNOWN;
+    }
 }
