@@ -1,5 +1,7 @@
 package com.example.paymentsystem.payment.config;
 
+import com.example.paymentsystem.payment.component.FailureSimulationInterceptor;
+import lombok.RequiredArgsConstructor;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -14,7 +16,10 @@ import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 @Configuration
+@RequiredArgsConstructor
 public class CardClientConfig {
+
+    private final FailureSimulationInterceptor interceptor;
 
     @Bean
     public RestClient cardRestClient(@Value("${payment.card.base-url}") String cardBaseUrl) {
@@ -38,6 +43,7 @@ public class CardClientConfig {
         return RestClient.builder()
                 .baseUrl(cardBaseUrl)
                 .requestFactory(new HttpComponentsClientHttpRequestFactory(httpClient))
+                .requestInterceptor(interceptor)
                 .build();
     }
 }

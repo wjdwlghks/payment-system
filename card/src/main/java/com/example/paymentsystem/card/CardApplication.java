@@ -1,11 +1,12 @@
 package com.example.paymentsystem.card;
 
+import com.example.paymentsystem.failure.FailureRegistry;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@SpringBootApplication(scanBasePackages = {
-        "com.example.paymentsystem.card",
-        "com.example.paymentsystem.failure"
+@SpringBootApplication(scanBasePackageClasses = {
+        CardApplication.class,
+        FailureRegistry.class
 })
 public class CardApplication {
 

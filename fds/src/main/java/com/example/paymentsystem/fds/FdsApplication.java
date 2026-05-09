@@ -1,11 +1,12 @@
 package com.example.paymentsystem.fds;
 
+import com.example.paymentsystem.failure.FailureRegistry;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@SpringBootApplication(scanBasePackages = {
-        "com.example.paymentsystem.fds",
-        "com.example.paymentsystem.failure"
+@SpringBootApplication(scanBasePackageClasses = {
+        FdsApplication.class,
+        FailureRegistry.class
 })
 public class FdsApplication {
 
