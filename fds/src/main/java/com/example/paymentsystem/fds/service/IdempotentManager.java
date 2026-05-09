@@ -23,6 +23,7 @@ public class IdempotentManager {
     public FraudCheck attemptInsert(FraudCheckRequest request, String hash) {
         String fdsId = "fds-" + UUID.randomUUID();
         FraudCheck fraudCheck = new FraudCheck(
+                request.idempotentKey(),
                 fdsId,
                 hash,
                 request.paymentKey(),

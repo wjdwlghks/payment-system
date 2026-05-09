@@ -13,20 +13,18 @@ public class CardClient {
     private final RestClient cardRestClient;
 
     public CardAuthResponse authorize(CardAuthRequest request) {
-        CardAuthResponse response = cardRestClient.post()
+        return cardRestClient.post()
                 .uri("/v1/authorizations")
                 .body(request)
                 .retrieve()
                 .body(CardAuthResponse.class);
-        return response;
     }
 
     public CardCaptureResponse capture(String authorizationId, CardCaptureRequest request) {
-        CardCaptureResponse response = cardRestClient.post()
+        return cardRestClient.post()
                 .uri("/v1/authorizations/{authorizationId}/capture", authorizationId)
                 .body(request)
                 .retrieve()
                 .body(CardCaptureResponse.class);
-        return response;
     }
 }

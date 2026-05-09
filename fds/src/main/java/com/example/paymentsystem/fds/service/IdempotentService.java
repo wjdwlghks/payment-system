@@ -18,8 +18,7 @@ public class IdempotentService {
         try {
             return idempotentManager.attemptInsert(request, hash);
         } catch (DataIntegrityViolationException e) {
-            String idempotentKey = request.paymentKey() + ":fds";
-            return repository.findByIdempotencyKey(idempotentKey)
+            return repository.findByIdempotencyKey(request.idempotentKey())
                     .orElseThrow(() -> new IllegalStateException("fraud check not found"));
         }
     }

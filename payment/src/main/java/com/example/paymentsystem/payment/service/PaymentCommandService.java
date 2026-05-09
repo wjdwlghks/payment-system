@@ -32,11 +32,13 @@ public class PaymentCommandService {
         );
         paymentIntentRepository.save(paymentIntent);
 
+        String authIdempotentKey = paymentIntent.getPaymentKey() + ":auth";
         PaymentTransaction transaction = PaymentTransaction.builder()
                 .paymentIntent(paymentIntent)
                 .type(TransactionType.AUTH)
                 .status(TransactionStatus.REQUESTED)
                 .amount(request.amount())
+                .idempotentKey(authIdempotentKey)
                 .build();
 
         paymentTransactionRepository.save(transaction);
@@ -47,7 +49,8 @@ public class PaymentCommandService {
                 paymentIntent.getPaymentKey(),
                 paymentIntent.getOrderId(),
                 paymentIntent.getMerchantId(),
-                paymentIntent.getAmount()
+                paymentIntent.getAmount(),
+                transaction.getIdempotentKey()
         );
     }
 
@@ -128,6 +131,7 @@ public class PaymentCommandService {
                 .type(TransactionType.FDS)
                 .amount(paymentIntent.getAmount())
                 .status(TransactionStatus.REQUESTED)
+                .idempotentKey(paymentIntent.getPaymentKey() + ":fds")
                 .build();
 
         paymentTransactionRepository.save(transaction);
@@ -138,7 +142,8 @@ public class PaymentCommandService {
                 paymentIntent.getPaymentKey(),
                 paymentIntent.getOrderId(),
                 paymentIntent.getMerchantId(),
-                paymentIntent.getAmount()
+                paymentIntent.getAmount(),
+                transaction.getIdempotentKey()
         );
     }
 
@@ -198,6 +203,7 @@ public class PaymentCommandService {
         fdsTransaction.markSucceeded(fdsResponse.externalId());
         paymentIntent.markCaptureRequested();
 
+        String captureIdempotentKey = paymentIntent.getPaymentKey() + ":capture";
         PaymentTransaction authTransaction = paymentTransactionRepository
                 .findByPaymentIntentAndTypeAndStatus(
                         paymentIntent,
@@ -211,6 +217,7 @@ public class PaymentCommandService {
                 .type(TransactionType.CAPTURE)
                 .status(TransactionStatus.REQUESTED)
                 .amount(paymentIntent.getAmount())
+                .idempotentKey(captureIdempotentKey)
                 .build();
 
         paymentTransactionRepository.save(captureTransaction);
@@ -221,7 +228,8 @@ public class PaymentCommandService {
                 authTransaction.getExternalId(),
                 paymentIntent.getPaymentKey(),
                 paymentIntent.getOrderId(),
-                paymentIntent.getAmount()
+                paymentIntent.getAmount(),
+                captureIdempotentKey
         );
     }
 

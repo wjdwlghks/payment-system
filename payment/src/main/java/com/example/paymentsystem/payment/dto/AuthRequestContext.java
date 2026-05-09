@@ -6,7 +6,8 @@ public record AuthRequestContext(
         String paymentKey,
         String orderId,
         String merchantId,
-        Long amount
+        Long amount,
+        String idempotentKey
 ) {
 }
 

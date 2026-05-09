@@ -58,10 +58,9 @@ public class PaymentService {
         }
 
         AuthRequestContext authContext = paymentCommandService.createAuthRequest(request);
-        String authIdempotentKey = authContext.paymentKey() + ":auth";
 
         CardAuthRequest authRequest = new CardAuthRequest(
-                authIdempotentKey,
+                authContext.idempotentKey(),
                 authContext.orderId(),
                 authContext.merchantId(),
                 authContext.amount()
@@ -82,6 +81,10 @@ public class PaymentService {
 
             return failAuth(idempotentKey, authContext);
         } catch (RestClientResponseException e) {
+            if (e.getStatusCode().is5xxServerError()) {
+                return unknownAuth(idempotentKey, authContext);
+            }
+
             return failAuth(idempotentKey, authContext);
         }
     }
@@ -112,6 +115,7 @@ public class PaymentService {
         FdsRequestContext fdsContext = paymentCommandService.createFdsRequest(paymentKey);
 
         FdsCheckRequest checkRequest = new FdsCheckRequest(
+                fdsContext.idempotentKey(),
                 fdsContext.paymentKey(),
                 fdsContext.orderId(),
                 fdsContext.merchantId(),
@@ -133,6 +137,10 @@ public class PaymentService {
             return failFds(idempotentKey, fdsContext);
 
         } catch (RestClientResponseException e) {
+            if (e.getStatusCode().is5xxServerError()) {
+                return unknownFds(idempotentKey, fdsContext);
+            }
+
             return failFds(idempotentKey, fdsContext);
         }
     }
@@ -144,9 +152,8 @@ public class PaymentService {
                 fdsResponse
         );
 
-        String captureIdempotentKey = fdsContext.paymentKey() + ":capture";
         CardCaptureRequest captureRequest = new CardCaptureRequest(
-                captureIdempotentKey,
+                captureContext.idempotentKey(),
                 captureContext.orderId(),
                 captureContext.amount()
         );
@@ -166,6 +173,10 @@ public class PaymentService {
             return failCapture(idempotentKey, captureContext);
 
         } catch (RestClientResponseException e) {
+            if (e.getStatusCode().is5xxServerError()) {
+                return unknownCapture(idempotentKey, captureContext);
+            }
+
             return failCapture(idempotentKey, captureContext);
         }
     }

@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.ContentCachingResponseWrapper;
 
 import java.io.IOException;
 
@@ -48,10 +49,10 @@ public class FailureFilter implements Filter {
             }
 
             case TIMEOUT_AFTER_PROCESS -> {
-                chain.doFilter(req, res);          // 정상 처리, DB 커밋
-                httpRes.flushBuffer();              // 응답이 만들어졌다면 밀어냄 (보장은 컨테이너 의존)
-                Thread.sleep(rule.getDelayMs());       // 응답 전달 직전 지연
-                // 클라이언트는 read timeout, 서버 DB는 성공 상태 → UNKNOWN 시나리오
+                ContentCachingResponseWrapper wrappedRes = new ContentCachingResponseWrapper(httpRes);
+                chain.doFilter(req, wrappedRes);
+                Thread.sleep(rule.getDelayMs());
+                wrappedRes.copyBodyToResponse();
             }
 
             case SLOW_SUCCESS -> {

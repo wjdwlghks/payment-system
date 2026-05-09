@@ -46,8 +46,8 @@ public class FraudCheck {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    public FraudCheck(String fdsId, String hash, String paymentKey, Long amount, FraudDecision decision) {
-        this.idempotencyKey = paymentKey + ":fds";
+    public FraudCheck(String idempotencyKey, String fdsId, String hash, String paymentKey, Long amount, FraudDecision decision) {
+        this.idempotencyKey = idempotencyKey;
         this.fdsId = fdsId;
         this.hash = hash;
         this.paymentKey = paymentKey;

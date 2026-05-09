@@ -6,7 +6,7 @@ public record FdsRequestContext(
         String paymentKey,
         String orderId,
         String merchantId,
-        Long amount
+        Long amount,
+        String idempotentKey
 ) {
 }
-
