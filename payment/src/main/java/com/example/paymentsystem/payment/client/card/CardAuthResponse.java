@@ -1,4 +1,4 @@
-package com.example.paymentsystem.payment.client;
+package com.example.paymentsystem.payment.client.card;
 
 import java.time.Instant;
 

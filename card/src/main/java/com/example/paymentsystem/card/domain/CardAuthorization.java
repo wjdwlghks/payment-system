@@ -49,8 +49,12 @@ public class CardAuthorization {
     private Long amount;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    private CardAuthorizationStatus status;
+    @Column(name = "auth_status", nullable = false, length = 30)
+    private CardAuthStatus authStatus;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "capture_status", nullable = false, length = 30)
+    private CardCaptureStatus captureStatus;
 
     @Column(name = "authorized_at", nullable = false)
     private Instant authorizedAt;
@@ -84,7 +88,7 @@ public class CardAuthorization {
         this.captureId = captureId;
         this.captureIdempotentKey = captureIdempotentKey;
         this.captureHash = captureHash;
-        this.status = CardAuthorizationStatus.CAPTURED;
+        this.captureStatus = CardCaptureStatus.SUCCESS;
         this.capturedAt = capturedAt;
     }
 }

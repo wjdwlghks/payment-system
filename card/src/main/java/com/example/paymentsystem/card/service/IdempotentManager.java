@@ -1,7 +1,8 @@
 package com.example.paymentsystem.card.service;
 
 import com.example.paymentsystem.card.domain.CardAuthorization;
-import com.example.paymentsystem.card.domain.CardAuthorizationStatus;
+import com.example.paymentsystem.card.domain.CardAuthStatus;
+import com.example.paymentsystem.card.domain.CardCaptureStatus;
 import com.example.paymentsystem.card.dto.AuthRequest;
 import com.example.paymentsystem.card.repository.CardAuthorizationRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +28,8 @@ public class IdempotentManager {
                 .authHash(authHash)
                 .amount(request.amount())
                 .authorizedAt(authorizedAt)
-                .status(CardAuthorizationStatus.AUTHORIZED)
+                .authStatus(CardAuthStatus.SUCCESS)
+                .captureStatus(CardCaptureStatus.NOT_STARTED)
                 .build();
 
         return repository.saveAndFlush(authorization);

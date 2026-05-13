@@ -8,4 +8,5 @@ public interface CardAuthorizationRepository extends JpaRepository<CardAuthoriza
 
     Optional<CardAuthorization> findByAuthId(String authId);
     Optional<CardAuthorization> findByAuthIdempotentKey(String authIdempotentKey);
+    Optional<CardAuthorization> findByCaptureIdempotentKey(String captureIdempotentKey);
 }

@@ -1,7 +1,9 @@
 package com.example.paymentsystem.card.service;
 
 import com.example.paymentsystem.card.domain.CardAuthorization;
+import com.example.paymentsystem.card.domain.CardCaptureStatus;
 import com.example.paymentsystem.card.dto.ApiResult;
+import com.example.paymentsystem.card.dto.CaptureInquiryResponse;
 import com.example.paymentsystem.card.dto.CaptureResponse;
 import com.example.paymentsystem.card.dto.ErrorResponse;
 import com.example.paymentsystem.card.repository.CardAuthorizationRepository;
@@ -49,6 +51,28 @@ public class CaptureCommandService {
         Optional<ApiResult> capturedResult = resolveCaptured(auth, idempotentKey, hash);
         return capturedResult.orElseGet(() -> errorResult(409, "Capture Conflict"));
 
+    }
+
+    @Transactional(readOnly = true)
+    public ApiResult inquire(String captureIdempotentKey) {
+        CaptureInquiryResponse response = repository.findByCaptureIdempotentKey(captureIdempotentKey)
+                .map(this::toInquiryResponse)
+                .orElseGet(() -> new CaptureInquiryResponse("not_found", null, null));
+
+        String responseBody = objectMapper.writeValueAsString(response);
+        return new ApiResult(200, responseBody);
+    }
+
+    private CaptureInquiryResponse toInquiryResponse(CardAuthorization auth) {
+        if (auth.getCaptureStatus() == CardCaptureStatus.SUCCESS) {
+            return new CaptureInquiryResponse("success", auth.getCaptureId(), auth.getCapturedAt());
+        }
+
+        if (auth.getCaptureStatus() == CardCaptureStatus.FAILED) {
+            return new CaptureInquiryResponse("failed", auth.getCaptureId(), auth.getCapturedAt());
+        }
+
+        return new CaptureInquiryResponse("in_progress", auth.getCaptureId(), auth.getCapturedAt());
     }
 
     private Optional<ApiResult> resolveCaptured(CardAuthorization auth, String idempotentKey, String hash) {

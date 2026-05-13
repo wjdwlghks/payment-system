@@ -87,6 +87,10 @@ public class PaymentIntent {
         this.status = PaymentIntentStatus.FDS_FAILED;
     }
 
+    public void markFdsReady() {
+        this.status = PaymentIntentStatus.FDS_READY;
+    }
+
     public void markCaptureRequested() {
         this.status = PaymentIntentStatus.CAPTURE_REQUESTED;
     }

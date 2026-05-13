@@ -1,4 +1,4 @@
-package com.example.paymentsystem.payment.client;
+package com.example.paymentsystem.payment.client.card;
 
 public record CardCaptureRequest(
         String captureIdempotentKey,

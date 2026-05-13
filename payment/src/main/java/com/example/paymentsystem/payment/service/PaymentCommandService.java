@@ -1,8 +1,5 @@
 package com.example.paymentsystem.payment.service;
 
-import com.example.paymentsystem.payment.client.CardAuthResponse;
-import com.example.paymentsystem.payment.client.CardCaptureResponse;
-import com.example.paymentsystem.payment.client.fds.FdsCheckResponse;
 import com.example.paymentsystem.payment.domain.PaymentIntent;
 import com.example.paymentsystem.payment.domain.PaymentTransaction;
 import com.example.paymentsystem.payment.domain.TransactionStatus;
@@ -10,7 +7,9 @@ import com.example.paymentsystem.payment.domain.TransactionType;
 import com.example.paymentsystem.payment.dto.*;
 import com.example.paymentsystem.payment.repository.PaymentIntentRepository;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
+import java.time.Instant;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,69 +54,43 @@ public class PaymentCommandService {
     }
 
     @Transactional
-    public PaymentResponse completeAuth(String paymentKey, Long transactionId, CardAuthResponse cardResponse) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
-        PaymentTransaction transaction = getTransaction(transactionId);
-
-        transaction.markSucceeded(cardResponse.externalId());
-        paymentIntent.markAuthReady(cardResponse.authorizedAt());
-
-        return toResponse(paymentIntent);
+    public PaymentResponse completeAuth(Long transactionId, String externalId, Instant authorizedAt) {
+        return update(transactionId, (paymentIntent, transaction) -> {
+            paymentIntent.markAuthReady(authorizedAt);
+            transaction.markSucceeded(externalId);
+        });
     }
 
     @Transactional
-    public PaymentResponse failAuth(String paymentKey, Long transactionId) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
-        PaymentTransaction transaction = getTransaction(transactionId);
-
-        paymentIntent.markAuthFailed();
-        transaction.markFailWithoutResponse();
-
-        return toResponse(paymentIntent);
+    public PaymentResponse failAuth(Long transactionId, String externalId) {
+        return update(transactionId, (paymentIntent, transaction) -> {
+            paymentIntent.markAuthFailed();
+            markFail(transaction, externalId);
+        });
     }
 
     @Transactional
-    public PaymentResponse failAuth(String paymentKey, Long transactionId, CardAuthResponse cardResponse) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
-        PaymentTransaction transaction = getTransaction(transactionId);
-
-        paymentIntent.markAuthFailed();
-        transaction.markFail(cardResponse.externalId());
-
-        return toResponse(paymentIntent);
+    public PaymentResponse unknownAuth(Long transactionId) {
+        return update(transactionId, (paymentIntent, transaction) -> {
+            paymentIntent.markAuthUnknown();
+            transaction.markUnknown();
+        });
     }
 
     @Transactional
-    public PaymentResponse unknownAuth(String paymentKey,  Long transactionId) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
-        PaymentTransaction transaction = getTransaction(transactionId);
-
-        paymentIntent.markAuthUnknown();
-        transaction.markUnknown();
-
-        return toResponse(paymentIntent);
+    public PaymentResponse unknownFds(Long transactionId) {
+        return update(transactionId, (paymentIntent, transaction) -> {
+            paymentIntent.markFdsUnknown();
+            transaction.markUnknown();
+        });
     }
 
     @Transactional
-    public PaymentResponse unknownFds(String paymentKey, Long transactionId) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
-        PaymentTransaction transaction = getTransaction(transactionId);
-
-        paymentIntent.markFdsUnknown();
-        transaction.markUnknown();
-
-        return toResponse(paymentIntent);
-    }
-
-    @Transactional
-    public PaymentResponse unknownCapture(String paymentKey, Long transcationId) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
-        PaymentTransaction transaction = getTransaction(transcationId);
-
-        paymentIntent.markCaptureUnknown();
-        transaction.markUnknown();
-
-        return toResponse(paymentIntent);
+    public PaymentResponse unknownCapture(Long transcationId) {
+        return update(transcationId, (paymentIntent, transaction) -> {
+            paymentIntent.markCaptureUnknown();
+            transaction.markUnknown();
+        });
     }
 
     @Transactional
@@ -148,59 +121,53 @@ public class PaymentCommandService {
     }
 
     @Transactional
-    public PaymentResponse failFds(String paymentKey, Long transactionId, FdsCheckResponse fdsResponse) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
-        PaymentTransaction transaction = getTransaction(transactionId);
-
-        transaction.markFail(fdsResponse.externalId());
-        paymentIntent.markFdsFailed();
-
-        return toResponse(paymentIntent);
+    public PaymentResponse failFds(Long transactionId, String externalId) {
+        return update(transactionId, (paymentIntent, transaction) -> {
+            paymentIntent.markFdsFailed();
+            markFail(transaction, externalId);
+        });
     }
 
     @Transactional
-    public PaymentResponse failFds(String paymentKey, Long transactionId) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
-        PaymentTransaction transaction = getTransaction(transactionId);
-
-        transaction.markFailWithoutResponse();
-        paymentIntent.markFdsFailed();
-
-        return toResponse(paymentIntent);
+    public PaymentResponse completeFds(Long transactionId, String externalId) {
+        return update(transactionId, (paymentIntent, transaction) -> {
+            paymentIntent.markFdsReady();
+            transaction.markSucceeded(externalId);
+        });
     }
 
     @Transactional
-    public PaymentResponse failCapture(String paymentKey, Long transactionId, CardCaptureResponse captureResponse) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
-        PaymentTransaction transaction = getTransaction(transactionId);
-
-        paymentIntent.markCaptureFailed();
-        transaction.markFail(captureResponse.externalId());
-
-        return toResponse(paymentIntent);
+    public PaymentResponse failCapture(Long transactionId, String externalId) {
+        return update(transactionId, (paymentIntent, transaction) -> {
+            paymentIntent.markCaptureFailed();
+            markFail(transaction, externalId);
+        });
     }
 
     @Transactional
-    public PaymentResponse failCapture(String paymentKey, Long transactionId) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
-        PaymentTransaction transaction = getTransaction(transactionId);
-
-        paymentIntent.markCaptureFailed();
-        transaction.markFailWithoutResponse();
-
-        return toResponse(paymentIntent);
+    public PaymentResponse completeCapture(Long captureTransactionId, String externalId) {
+        return update(captureTransactionId, (paymentIntent, transaction) -> {
+            paymentIntent.markDone();
+            transaction.markSucceeded(externalId);
+        });
     }
 
     @Transactional
     public CaptureRequestContext completeFdsAndCreateCaptureRequest(
-            String paymentKey,
             Long fdsTransactionId,
-            FdsCheckResponse fdsResponse
+            String externalId
     ) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
         PaymentTransaction fdsTransaction = getTransaction(fdsTransactionId);
+        PaymentIntent paymentIntent = fdsTransaction.getPaymentIntent();
 
-        fdsTransaction.markSucceeded(fdsResponse.externalId());
+        fdsTransaction.markSucceeded(externalId);
+
+        return createCaptureRequest(paymentIntent.getPaymentKey());
+    }
+
+    @Transactional
+    public CaptureRequestContext createCaptureRequest(String paymentKey) {
+        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
         paymentIntent.markCaptureRequested();
 
         String captureIdempotentKey = paymentIntent.getPaymentKey() + ":capture";
@@ -234,21 +201,6 @@ public class PaymentCommandService {
     }
 
     @Transactional
-    public PaymentResponse completeCapture(
-            String paymentKey,
-            Long captureTransactionId,
-            CardCaptureResponse captureResponse
-    ) {
-        PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
-        PaymentTransaction captureTransaction = getTransaction(captureTransactionId);
-
-
-        captureTransaction.markSucceeded(captureResponse.externalId());
-        paymentIntent.markDone();
-
-        return toResponse(paymentIntent);
-    }
-
     public PaymentIntent getPaymentIntent(String paymentKey) {
         return paymentIntentRepository.findByPaymentKey(paymentKey)
                 .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + paymentKey));
@@ -269,4 +221,22 @@ public class PaymentCommandService {
         );
     }
 
+    private PaymentResponse update(
+            Long transactionId,
+            BiConsumer<PaymentIntent, PaymentTransaction> updater
+    ) {
+        PaymentTransaction transaction = getTransaction(transactionId);
+        PaymentIntent paymentIntent = transaction.getPaymentIntent();
+        updater.accept(paymentIntent, transaction);
+        return toResponse(paymentIntent);
+    }
+
+    private void markFail(PaymentTransaction transaction, String externalId) {
+        if (externalId == null) {
+            transaction.markFailWithoutResponse();
+            return;
+        }
+
+        transaction.markFail(externalId);
+    }
 }

@@ -1,4 +1,4 @@
-package com.example.paymentsystem.payment.client;
+package com.example.paymentsystem.payment.client.card;
 
 import io.github.resilience4j.retry.Retry;
 import lombok.RequiredArgsConstructor;
@@ -38,5 +38,27 @@ public class CardClient {
                         .body(CardCaptureResponse.class);
 
         return Retry.decorateSupplier(cardCaptureRetry, supplier).get();
+    }
+
+    public CardCaptureResponse captureWithoutRetry(String authorizationId, CardCaptureRequest request) {
+        return cardRestClient.post()
+                .uri("/v1/authorizations/{authorizationId}/capture", authorizationId)
+                .body(request)
+                .retrieve()
+                .body(CardCaptureResponse.class);
+    }
+
+    public AuthInquiryResponse inquiryAuth(String authIdempotentKey) {
+        return cardRestClient.get()
+                .uri("/v1/authorizations/inquiries/{authIdempotentKey}", authIdempotentKey)
+                .retrieve()
+                .body(AuthInquiryResponse.class);
+    }
+
+    public CaptureInquiryResponse inquiryCapture(String captureIdempotentKey) {
+        return cardRestClient.get()
+                .uri("/v1/authorizations/captures/inquiries/{captureIdempotentKey}", captureIdempotentKey)
+                .retrieve()
+                .body(CaptureInquiryResponse.class);
     }
 }

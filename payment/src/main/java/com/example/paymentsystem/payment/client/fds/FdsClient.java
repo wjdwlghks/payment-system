@@ -26,4 +26,11 @@ public class FdsClient {
 
         return Retry.decorateSupplier(fdsCheckRetry, supplier).get();
     }
+
+    public FdsInquiryResponse inquiry(String idempotencyKey) {
+        return fdsRestClient.get()
+                .uri("/v1/fraud-checks/inquiries/{idempotencyKey}", idempotencyKey)
+                .retrieve()
+                .body(FdsInquiryResponse.class);
+    }
 }
