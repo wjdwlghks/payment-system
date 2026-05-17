@@ -10,6 +10,7 @@ import com.example.paymentsystem.payment.repository.PaymentTransactionRepository
 import java.time.Instant;
 import java.util.UUID;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +21,7 @@ public class PaymentCommandService {
 
     private final PaymentIntentRepository paymentIntentRepository;
     private final PaymentTransactionRepository paymentTransactionRepository;
+    private final WebhookService webhookService;
 
     @Transactional
     public AuthRequestContext createAuthRequest(PaymentRequest request) {
@@ -58,7 +60,7 @@ public class PaymentCommandService {
         return update(transactionId, (paymentIntent, transaction) -> {
             paymentIntent.markAuthReady(authorizedAt);
             transaction.markSucceeded(externalId);
-        });
+        }, webhookService::saveAuthReady);
     }
 
     @Transactional
@@ -66,7 +68,7 @@ public class PaymentCommandService {
         return update(transactionId, (paymentIntent, transaction) -> {
             paymentIntent.markAuthFailed();
             markFail(transaction, externalId);
-        });
+        }, webhookService::saveAuthFailed);
     }
 
     @Transactional
@@ -125,7 +127,7 @@ public class PaymentCommandService {
         return update(transactionId, (paymentIntent, transaction) -> {
             paymentIntent.markFdsFailed();
             markFail(transaction, externalId);
-        });
+        }, webhookService::saveFdsFailed);
     }
 
     @Transactional
@@ -141,7 +143,7 @@ public class PaymentCommandService {
         return update(transactionId, (paymentIntent, transaction) -> {
             paymentIntent.markCaptureFailed();
             markFail(transaction, externalId);
-        });
+        }, webhookService::saveCaptureFailed);
     }
 
     @Transactional
@@ -149,7 +151,7 @@ public class PaymentCommandService {
         return update(captureTransactionId, (paymentIntent, transaction) -> {
             paymentIntent.markDone();
             transaction.markSucceeded(externalId);
-        });
+        }, webhookService::savePaymentComplete);
     }
 
     @Transactional
@@ -225,9 +227,18 @@ public class PaymentCommandService {
             Long transactionId,
             BiConsumer<PaymentIntent, PaymentTransaction> updater
     ) {
+        return update(transactionId, updater, paymentIntent -> {});
+    }
+
+    private PaymentResponse update(
+            Long transactionId,
+            BiConsumer<PaymentIntent, PaymentTransaction> updater,
+            Consumer<PaymentIntent> afterUpdate
+    ) {
         PaymentTransaction transaction = getTransaction(transactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         updater.accept(paymentIntent, transaction);
+        afterUpdate.accept(paymentIntent);
         return toResponse(paymentIntent);
     }
 

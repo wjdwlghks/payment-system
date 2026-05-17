@@ -28,6 +28,7 @@ services:
       MYSQL_PASSWORD: payment
       CARD_BASE_URL: http://card:8080
       FDS_BASE_URL: http://fds:8080
+      MERCHANT_BASE_URL: http://merchant:8080
     depends_on:
       payment-mysql:
         condition: service_healthy

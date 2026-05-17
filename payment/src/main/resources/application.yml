@@ -21,3 +21,5 @@ payment:
     base-url: ${CARD_BASE_URL:http://card:8080}
   fds:
     base-url: ${FDS_BASE_URL:http://fds:8080}
+  webhook:
+    merchant-base-url: ${MERCHANT_BASE_URL:http://merchant:8080}
