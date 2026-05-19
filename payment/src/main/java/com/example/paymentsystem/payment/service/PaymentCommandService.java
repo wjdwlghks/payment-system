@@ -22,6 +22,9 @@ public class PaymentCommandService {
     private final PaymentIntentRepository paymentIntentRepository;
     private final PaymentTransactionRepository paymentTransactionRepository;
     private final WebhookService webhookService;
+    private final AccountService accountService;
+    private final LedgerService ledgerService;
+
 
     @Transactional
     public AuthRequestContext createAuthRequest(PaymentRequest request) {
@@ -148,10 +151,14 @@ public class PaymentCommandService {
 
     @Transactional
     public PaymentResponse completeCapture(Long captureTransactionId, String externalId) {
-        return update(captureTransactionId, (paymentIntent, transaction) -> {
+        PaymentResponse response = update(captureTransactionId, (paymentIntent, transaction) -> {
             paymentIntent.markDone();
             transaction.markSucceeded(externalId);
         }, webhookService::savePaymentComplete);
+
+        ledgerService.postCapture(captureTransactionId);
+
+        return response;
     }
 
     @Transactional

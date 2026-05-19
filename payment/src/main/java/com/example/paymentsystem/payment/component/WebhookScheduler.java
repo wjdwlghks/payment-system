@@ -2,7 +2,6 @@ package com.example.paymentsystem.payment.component;
 
 import com.example.paymentsystem.payment.domain.WebhookOutbox;
 import com.example.paymentsystem.payment.service.WebhookService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
@@ -13,14 +12,19 @@ import org.springframework.web.client.RestClient;
 import java.util.List;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class WebhookScheduler {
 
     private final WebhookService webhookService;
-
-    @Qualifier("merchantWebhookRestClient")
     private final RestClient restClient;
+
+    public WebhookScheduler(
+            WebhookService webhookService,
+            @Qualifier("merchantWebhookRestClient") RestClient restClient
+    ) {
+        this.webhookService = webhookService;
+        this.restClient = restClient;
+    }
 
     @Scheduled(fixedDelay = 10_000)
     public void webhook() {

@@ -48,8 +48,7 @@ public class WebhookOutbox {
     @Column(name = "next_attempt_at", nullable = false)
     private Instant nextAttemptAt;
 
-    @Lob
-    @Column(name = "last_error")
+    @Column(name = "last_error", columnDefinition = "TEXT")
     private String lastError;
 
     @Column(name = "created_at", nullable = false, updatable = false)
