@@ -6,6 +6,8 @@ import com.example.paymentsystem.payment.repository.AccountRepository;
 import com.example.paymentsystem.payment.repository.LedgerPostingRepository;
 import com.example.paymentsystem.payment.repository.LedgerRepository;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
+
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -83,6 +85,46 @@ public class LedgerService {
         ledgerRepository.saveAll(entries);
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void postClearing(Long batchId, Long totalAmount) {
+        Account cardReceivable = accountRepository.findByAccountTypeAndMerchantId(AccountType.CARD_NETWORK_RECEIVABLE, GLOBAL)
+                .orElseThrow();
+        Account bank = accountRepository.findByAccountTypeAndMerchantId(AccountType.BANK_ACCOUNT, GLOBAL)
+                .orElseThrow();
+
+
+        List<LedgerEntry> entries = new ArrayList<>();
+        entries.add(new LedgerEntry(
+                cardReceivable,
+                LedgerDirection.CREDIT,
+                totalAmount,
+                LedgerEntryType.CLEARING
+        ));
+        entries.add(new LedgerEntry(
+                bank,
+                LedgerDirection.DEBIT,
+                totalAmount,
+                LedgerEntryType.CLEARING
+        ));
+
+        LedgerPosting posting = ledgerPostingRepository.save(
+                new LedgerPosting(
+                        LedgerPostingType.CLEARING,
+                        LedgerSourceType.CLEARING_BATCH,
+                        batchId.toString(),
+                        total(entries, LedgerDirection.DEBIT),
+                        total(entries, LedgerDirection.CREDIT)
+                )
+        );
+
+        entries.forEach(entry -> {
+            entry.assignPosting(posting);
+            entry.getAccount().apply(entry.getDirection(), entry.getAmount());
+        });
+
+        ledgerRepository.saveAll(entries);
+    }
+
     private long total(List<LedgerEntry> entries, LedgerDirection direction) {
         return entries.stream()
                 .filter(entry -> entry.getDirection() == direction)
@@ -94,4 +136,6 @@ public class LedgerService {
         long numerator = Math.multiplyExact(amount, 3L);
         return Math.addExact(numerator, 50L) / 100L;
     }
+
+
 }
