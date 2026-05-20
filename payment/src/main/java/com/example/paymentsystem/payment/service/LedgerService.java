@@ -125,6 +125,55 @@ public class LedgerService {
         ledgerRepository.saveAll(entries);
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void postSettlement(Long runId, List<PaymentTransaction> transactions) {
+
+        List<LedgerEntry> entries = new ArrayList<>();
+
+        for (PaymentTransaction transaction : transactions) {
+            String merchantId = transaction.getPaymentIntent().getMerchantId();
+
+            Account merchantPending = accountRepository.findByAccountTypeAndMerchantId(AccountType.MERCHANT_PENDING, merchantId)
+                    .orElseThrow();
+            Account merchantAvailable = accountRepository.findByAccountTypeAndMerchantId(AccountType.MERCHANT_AVAILABLE, merchantId)
+                    .orElseGet(() -> accountRepository.save(
+                            new Account(AccountType.MERCHANT_AVAILABLE, AccountClass.LIABILITY, merchantId))
+                    );
+
+            Long fee = calculateFee(transaction.getAmount());
+
+            entries.add(new LedgerEntry(
+                    merchantPending,
+                    LedgerDirection.DEBIT,
+                    transaction.getAmount() - fee,
+                    LedgerEntryType.SETTLEMENT
+            ));
+            entries.add(new LedgerEntry(
+                    merchantAvailable,
+                    LedgerDirection.CREDIT,
+                    transaction.getAmount() - fee,
+                    LedgerEntryType.SETTLEMENT
+            ));
+        }
+
+        LedgerPosting posting = ledgerPostingRepository.save(
+                new LedgerPosting(
+                        LedgerPostingType.SETTLEMENT,
+                        LedgerSourceType.SETTLEMENT_RUN,
+                        runId.toString(),
+                        total(entries, LedgerDirection.DEBIT),
+                        total(entries, LedgerDirection.CREDIT)
+                )
+        );
+
+        entries.forEach(entry -> {
+            entry.assignPosting(posting);
+            entry.getAccount().apply(entry.getDirection(), entry.getAmount());
+        });
+
+        ledgerRepository.saveAll(entries);
+    }
+
     private long total(List<LedgerEntry> entries, LedgerDirection direction) {
         return entries.stream()
                 .filter(entry -> entry.getDirection() == direction)
@@ -136,6 +185,5 @@ public class LedgerService {
         long numerator = Math.multiplyExact(amount, 3L);
         return Math.addExact(numerator, 50L) / 100L;
     }
-
 
 }
