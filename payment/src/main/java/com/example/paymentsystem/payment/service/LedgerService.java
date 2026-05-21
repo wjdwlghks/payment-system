@@ -174,6 +174,45 @@ public class LedgerService {
         ledgerRepository.saveAll(entries);
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void postPayout(Long payoutId, String merchantId, Long amount) {
+        Account merchantAvailable = accountRepository.findByAccountTypeAndMerchantId(AccountType.MERCHANT_AVAILABLE, merchantId)
+                .orElseThrow();
+        Account bank = accountRepository.findByAccountTypeAndMerchantId(AccountType.BANK_ACCOUNT, GLOBAL)
+                .orElseThrow();
+
+        List<LedgerEntry> entries = new ArrayList<>();
+        entries.add(new LedgerEntry(
+                merchantAvailable,
+                LedgerDirection.DEBIT,
+                amount,
+                LedgerEntryType.PAYOUT
+        ));
+        entries.add(new LedgerEntry(
+                bank,
+                LedgerDirection.CREDIT,
+                amount,
+                LedgerEntryType.PAYOUT
+        ));
+
+        LedgerPosting posting = ledgerPostingRepository.save(
+                new LedgerPosting(
+                        LedgerPostingType.PAYOUT,
+                        LedgerSourceType.PAYOUT_REQUEST,
+                        payoutId.toString(),
+                        total(entries, LedgerDirection.DEBIT),
+                        total(entries, LedgerDirection.CREDIT)
+                )
+        );
+
+        entries.forEach(entry -> {
+            entry.assignPosting(posting);
+            entry.getAccount().apply(entry.getDirection(), entry.getAmount());
+        });
+
+        ledgerRepository.saveAll(entries);
+    }
+
     private long total(List<LedgerEntry> entries, LedgerDirection direction) {
         return entries.stream()
                 .filter(entry -> entry.getDirection() == direction)
