@@ -1,5 +1,6 @@
 package com.example.paymentsystem.payment.client.card;
 
+import com.example.paymentsystem.payment.dto.RefundInquiryResponse;
 import io.github.resilience4j.retry.Retry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -17,6 +18,7 @@ public class CardClient {
 
     private final Retry cardAuthRetry;
     private final Retry cardCaptureRetry;
+    private final Retry cardRefundRetry;
 
     public CardAuthResponse authorize(CardAuthRequest request) {
         Supplier<CardAuthResponse> supplier = () ->
@@ -40,6 +42,17 @@ public class CardClient {
         return Retry.decorateSupplier(cardCaptureRetry, supplier).get();
     }
 
+    public CardRefundResponse refund(String captureId, CardRefundRequest request) {
+        Supplier<CardRefundResponse> supplier = () ->
+                cardRestClient.post()
+                        .uri("/v1/authorizations/{captureId}/refund", captureId)
+                        .body(request)
+                        .retrieve()
+                        .body(CardRefundResponse.class);
+
+        return Retry.decorateSupplier(cardRefundRetry, supplier).get();
+    }
+
     public CardCaptureResponse captureWithoutRetry(String authorizationId, CardCaptureRequest request) {
         return cardRestClient.post()
                 .uri("/v1/authorizations/{authorizationId}/capture", authorizationId)
@@ -60,5 +73,12 @@ public class CardClient {
                 .uri("/v1/authorizations/captures/inquiries/{captureIdempotentKey}", captureIdempotentKey)
                 .retrieve()
                 .body(CaptureInquiryResponse.class);
+    }
+
+    public RefundInquiryResponse inquiryRefund(String refundIdempotentKey) {
+        return cardRestClient.get()
+                .uri("/v1/authorizations/refund/inquiries/{refundIdempotentKey}", refundIdempotentKey)
+                .retrieve()
+                .body(RefundInquiryResponse.class);
     }
 }

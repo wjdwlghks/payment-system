@@ -37,13 +37,12 @@ public class PaymentCommandService {
         paymentIntentRepository.save(paymentIntent);
 
         String authIdempotentKey = paymentIntent.getPaymentKey() + ":auth";
-        PaymentTransaction transaction = PaymentTransaction.builder()
-                .paymentIntent(paymentIntent)
-                .type(TransactionType.AUTH)
-                .status(TransactionStatus.REQUESTED)
-                .amount(request.amount())
-                .idempotentKey(authIdempotentKey)
-                .build();
+        PaymentTransaction transaction = new PaymentTransaction(
+                paymentIntent,
+                TransactionType.AUTH,
+                request.amount(),
+                authIdempotentKey
+        );
 
         paymentTransactionRepository.save(transaction);
 
@@ -91,8 +90,8 @@ public class PaymentCommandService {
     }
 
     @Transactional
-    public PaymentResponse unknownCapture(Long transcationId) {
-        return update(transcationId, (paymentIntent, transaction) -> {
+    public PaymentResponse unknownCapture(Long transactionId) {
+        return update(transactionId, (paymentIntent, transaction) -> {
             paymentIntent.markCaptureUnknown();
             transaction.markUnknown();
         });
@@ -104,13 +103,12 @@ public class PaymentCommandService {
                 .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + paymentKey));
 
         paymentIntent.markFdsRequested();
-        PaymentTransaction transaction = PaymentTransaction.builder()
-                .paymentIntent(paymentIntent)
-                .type(TransactionType.FDS)
-                .amount(paymentIntent.getAmount())
-                .status(TransactionStatus.REQUESTED)
-                .idempotentKey(paymentIntent.getPaymentKey() + ":fds")
-                .build();
+        PaymentTransaction transaction = new PaymentTransaction(
+                paymentIntent,
+                TransactionType.FDS,
+                paymentIntent.getAmount(),
+                paymentIntent.getPaymentKey() + ":fds"
+        );
 
         paymentTransactionRepository.save(transaction);
 
@@ -152,7 +150,7 @@ public class PaymentCommandService {
     @Transactional
     public PaymentResponse completeCapture(Long captureTransactionId, String externalId) {
         PaymentResponse response = update(captureTransactionId, (paymentIntent, transaction) -> {
-            paymentIntent.markDone();
+            paymentIntent.markDone(externalId);
             transaction.markSucceeded(externalId);
         }, webhookService::savePaymentComplete);
 
@@ -188,13 +186,12 @@ public class PaymentCommandService {
                 )
                 .orElseThrow(() -> new IllegalStateException("Succeeded auth transaction not found"));
 
-        PaymentTransaction captureTransaction = PaymentTransaction.builder()
-                .paymentIntent(paymentIntent)
-                .type(TransactionType.CAPTURE)
-                .status(TransactionStatus.REQUESTED)
-                .amount(paymentIntent.getAmount())
-                .idempotentKey(captureIdempotentKey)
-                .build();
+        PaymentTransaction captureTransaction = new PaymentTransaction(
+                paymentIntent,
+                TransactionType.CAPTURE,
+                paymentIntent.getAmount(),
+                captureIdempotentKey
+        );
 
         paymentTransactionRepository.save(captureTransaction);
 

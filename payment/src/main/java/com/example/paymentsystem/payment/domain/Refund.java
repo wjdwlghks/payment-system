@@ -14,36 +14,36 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
-
-import lombok.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "`transaction`")
+@Table(name = "refund")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class PaymentTransaction {
+public class Refund {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "refund_key", nullable = false, length = 64, unique = true)
+    private String refundKey;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "payment_intent_id", nullable = false)
     private PaymentIntent paymentIntent;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    private TransactionType type;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    private TransactionStatus status;
+    @Column(name = "transaction_id", nullable = false)
+    private Long transactionId;
 
     @Column(nullable = false)
     private Long amount;
 
-    @Column(name = "idempotent_key")
-    private String idempotentKey;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private RefundStatus status;
 
     @Column(name = "external_id", length = 100)
     private String externalId;
@@ -54,17 +54,21 @@ public class PaymentTransaction {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    public PaymentTransaction(
-            PaymentIntent paymentIntent,
-            TransactionType type,
-            Long amount,
-            String idempotentKey
-    ) {
+    public Refund(PaymentIntent paymentIntent, Long transactionId, String refundKey, Long amount) {
+        if (refundKey == null || refundKey.isBlank()) {
+            throw new IllegalArgumentException("refundKey must not be blank");
+        }
+        if (amount == null || amount <= 0) {
+            throw new IllegalArgumentException("amount must be positive");
+        }
+        if (transactionId == null) {
+            throw new IllegalArgumentException("transactionId must not be null");
+        }
+        this.refundKey = refundKey;
         this.paymentIntent = paymentIntent;
-        this.type = type;
+        this.transactionId = transactionId;
         this.amount = amount;
-        this.idempotentKey = idempotentKey;
-        this.status = TransactionStatus.REQUESTED;
+        this.status = RefundStatus.REQUESTED;
     }
 
     @PrePersist
@@ -80,20 +84,20 @@ public class PaymentTransaction {
     }
 
     public void markSucceeded(String externalId) {
-        this.status = TransactionStatus.SUCCEEDED;
+        this.status = RefundStatus.SUCCEEDED;
         this.externalId = externalId;
     }
 
     public void markFail(String externalId) {
-        this.status = TransactionStatus.FAIL;
+        this.status = RefundStatus.FAIL;
         this.externalId = externalId;
     }
 
     public void markFailWithoutResponse() {
-        this.status = TransactionStatus.FAIL;
+        this.status = RefundStatus.FAIL;
     }
 
     public void markUnknown() {
-        this.status = TransactionStatus.UNKNOWN;
+        this.status = RefundStatus.UNKNOWN;
     }
 }

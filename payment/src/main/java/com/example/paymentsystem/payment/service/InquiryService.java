@@ -6,8 +6,11 @@ import com.example.paymentsystem.payment.client.card.CaptureInquiryResponse;
 import com.example.paymentsystem.payment.client.fds.FdsClient;
 import com.example.paymentsystem.payment.client.fds.FdsInquiryResponse;
 import com.example.paymentsystem.payment.domain.PaymentTransaction;
+import com.example.paymentsystem.payment.domain.Refund;
 import com.example.paymentsystem.payment.domain.TransactionStatus;
+import com.example.paymentsystem.payment.dto.RefundInquiryResponse;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
+import com.example.paymentsystem.payment.repository.RefundRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,10 +22,12 @@ import java.util.List;
 public class InquiryService {
 
     private final PaymentTransactionRepository paymentTransactionRepository;
+    private final RefundRepository refundRepository;
     private final CardClient cardClient;
     private final FdsClient fdsClient;
     private final ExternalCallExecutor externalCallExecutor;
     private final PaymentCommandService paymentCommandService;
+    private final RefundCommandService refundCommandService;
 
     @Transactional(readOnly = true)
     public List<PaymentTransaction> getUnknowns() {
@@ -58,6 +63,29 @@ public class InquiryService {
                 () -> {},
                 () -> paymentCommandService.failCapture(transaction.getId(), null)
         );
+    }
+
+    public void inquiryRefund(PaymentTransaction transaction) {
+        Refund refund = refundRepository.findByTransactionId(transaction.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Refund not found for transaction: " + transaction.getId()));
+        String refundKey = refund.getRefundKey();
+        externalCallExecutor.executeVoid(
+                () -> cardClient.inquiryRefund(refundKey),
+                response -> handleRefundInquiry(transaction, refund, response),
+                () -> {},
+                () -> refundCommandService.failRefund(transaction.getId(), refundKey, null)
+        );
+    }
+
+    private void handleRefundInquiry(PaymentTransaction transaction, Refund refund, RefundInquiryResponse response) {
+        switch (response.status()) {
+            case "success" -> refundCommandService.completeRefund(
+                    transaction.getId(), refund.getRefundKey(), refund.getAmount(), response.externalId()
+            );
+            case "failed" -> refundCommandService.failRefund(transaction.getId(), refund.getRefundKey(), response.externalId());
+            case "not_found" -> refundCommandService.failRefund(transaction.getId(), refund.getRefundKey(), null);
+            case "in_progress" -> {}
+        }
     }
 
     private void handleAuthInquiry(PaymentTransaction transaction, AuthInquiryResponse response) {

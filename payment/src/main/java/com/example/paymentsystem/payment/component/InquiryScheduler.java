@@ -27,6 +27,7 @@ public class InquiryScheduler {
                     case AUTH -> inquiryService.inquiryAuth(transaction);
                     case FDS -> inquiryService.inquiryFds(transaction);
                     case CAPTURE -> inquiryService.inquiryCapture(transaction);
+                    case REFUND -> inquiryService.inquiryRefund(transaction);
                 }
             } catch (Exception e) {
                 log.error("Failed to inquire unknown transaction. transactionId={}", transaction.getId(), e);

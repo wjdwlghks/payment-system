@@ -52,6 +52,11 @@ public class ResilienceConfig {
     }
 
     @Bean
+    public Retry cardRefundRetry(RetryRegistry registry) {
+        return registry.retry("cardRefund");
+    }
+
+    @Bean
     public Retry fdsCheckRetry(RetryRegistry registry) {
         return registry.retry("fdsCheck");
     }

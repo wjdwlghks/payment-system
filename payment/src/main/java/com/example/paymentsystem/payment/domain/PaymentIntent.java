@@ -37,12 +37,18 @@ public class PaymentIntent {
     @Column(nullable = false)
     private Long amount;
 
+    @Column(name = "refunded_amount", nullable = false)
+    private Long refundedAmount;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private PaymentIntentStatus status;
 
     @Column(name = "authorized_at")
     private Instant authorizedAt;
+
+    @Column(name = "capture_id", length = 100)
+    private String captureId;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -55,6 +61,7 @@ public class PaymentIntent {
         this.orderId = orderId;
         this.merchantId = merchantId;
         this.amount = amount;
+        this.refundedAmount = 0L;
         this.status = PaymentIntentStatus.AUTH_REQUESTED;
     }
 
@@ -99,8 +106,9 @@ public class PaymentIntent {
         this.status = PaymentIntentStatus.CAPTURE_FAILED;
     }
 
-    public void markDone() {
+    public void markDone(String captureId) {
         this.status = PaymentIntentStatus.DONE;
+        this.captureId = captureId;
     }
 
     public void markAuthUnknown() {
@@ -114,4 +122,13 @@ public class PaymentIntent {
     public void markCaptureUnknown() {
         this.status = PaymentIntentStatus.UNKNOWN_CAPTURE;
     }
+
+    public void addRefundedAmount(Long amount) {
+        this.refundedAmount += amount;
+    }
+
+    public void markRefunded() { this.status = PaymentIntentStatus.REFUNDED; }
+
+    public void markPartiallyRefunded() { this.status = PaymentIntentStatus.PARTIALLY_REFUNDED; }
+
 }
