@@ -15,7 +15,8 @@ public class CardFailureConfig {
     public FailureAliasPatterns failureAliasPatterns() {
         return new FailureAliasPatterns(Map.of(
                 "auth", Pattern.compile("^POST /v1/authorizations$"),
-                "capture", Pattern.compile("^POST /v1/authorizations/[^/]+/capture$")
+                "capture", Pattern.compile("^POST /v1/authorizations/[^/]+/capture$"),
+                "refund", Pattern.compile("^POST /v1/authorizations/[^/]+/refund$")
         ));
     }
 }
