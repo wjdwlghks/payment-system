@@ -86,6 +86,70 @@ public class LedgerService {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
+    public void postRefund(Long refundTransactionId) {
+        PaymentTransaction transaction = paymentTransactionRepository.findById(refundTransactionId)
+                .orElseThrow();
+        PaymentIntent paymentIntent = transaction.getPaymentIntent();
+        String merchantId = paymentIntent.getMerchantId();
+
+        Account cardReceivable = accountRepository.findByAccountTypeAndMerchantId(AccountType.CARD_NETWORK_RECEIVABLE, GLOBAL)
+                .orElseThrow();
+        Account merchantPending = accountRepository.findByAccountTypeAndMerchantId(AccountType.MERCHANT_PENDING, merchantId)
+                .orElseGet(() -> accountRepository.save(
+                        new Account(AccountType.MERCHANT_PENDING, AccountClass.LIABILITY, merchantId))
+                );
+        Account merchantAvailable = accountRepository.findByAccountTypeAndMerchantId(AccountType.MERCHANT_AVAILABLE, merchantId)
+                .orElseGet(() -> accountRepository.save(
+                        new Account(AccountType.MERCHANT_AVAILABLE, AccountClass.LIABILITY, merchantId))
+                );
+
+        long refundAmount = transaction.getAmount();
+        long takeFromPending = Math.clamp(merchantPending.getBalance(), 0L, refundAmount);
+        long takeFromAvailable = refundAmount - takeFromPending;
+
+        List<LedgerEntry> entries = new ArrayList<>();
+        if (takeFromPending > 0) {
+            entries.add(new LedgerEntry(
+                    merchantPending,
+                    LedgerDirection.DEBIT,
+                    takeFromPending,
+                    LedgerEntryType.REFUND
+            ));
+        }
+        if (takeFromAvailable > 0) {
+            entries.add(new LedgerEntry(
+                    merchantAvailable,
+                    LedgerDirection.DEBIT,
+                    takeFromAvailable,
+                    LedgerEntryType.REFUND
+            ));
+        }
+        entries.add(new LedgerEntry(
+                cardReceivable,
+                LedgerDirection.CREDIT,
+                refundAmount,
+                LedgerEntryType.REFUND
+        ));
+
+        LedgerPosting posting = ledgerPostingRepository.save(
+                new LedgerPosting(
+                        LedgerPostingType.REFUND,
+                        LedgerSourceType.REFUND_TRANSACTION,
+                        refundTransactionId.toString(),
+                        total(entries, LedgerDirection.DEBIT),
+                        total(entries, LedgerDirection.CREDIT)
+                )
+        );
+
+        entries.forEach(entry -> {
+            entry.assignPosting(posting);
+            entry.getAccount().apply(entry.getDirection(), entry.getAmount());
+        });
+
+        ledgerRepository.saveAll(entries);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
     public void postClearing(Long batchId, Long totalAmount) {
         Account cardReceivable = accountRepository.findByAccountTypeAndMerchantId(AccountType.CARD_NETWORK_RECEIVABLE, GLOBAL)
                 .orElseThrow();

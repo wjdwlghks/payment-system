@@ -21,6 +21,7 @@ public class RefundCommandService {
     private final PaymentTransactionRepository paymentTransactionRepository;
     private final PaymentIntentRepository paymentIntentRepository;
     private final RefundRepository refundRepository;
+    private final LedgerService ledgerService;
 
     @Transactional
     public RefundRequestContext createRefundRequest(RefundRequest request) {
@@ -78,6 +79,9 @@ public class RefundCommandService {
         }
         refund.markSucceeded(externalId);
         transaction.markSucceeded(externalId);
+
+        ledgerService.postRefund(txId);
+
         return toResponse(refundKey, RefundStatus.SUCCEEDED, refund.getAmount());
     }
 
