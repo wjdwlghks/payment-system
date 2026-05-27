@@ -22,6 +22,7 @@ public class RefundCommandService {
     private final PaymentIntentRepository paymentIntentRepository;
     private final RefundRepository refundRepository;
     private final LedgerService ledgerService;
+    private final WebhookService webhookService;
 
     @Transactional
     public RefundRequestContext createRefundRequest(RefundRequest request) {
@@ -80,6 +81,7 @@ public class RefundCommandService {
         refund.markSucceeded(externalId);
         transaction.markSucceeded(externalId);
 
+        webhookService.saveRefundSucceeded(refund);
         ledgerService.postRefund(txId);
 
         return toResponse(refundKey, RefundStatus.SUCCEEDED, refund.getAmount());
@@ -103,6 +105,8 @@ public class RefundCommandService {
 
         refund.markFail(externalId);
         transaction.markFail(externalId);
+
+        webhookService.saveRefundFailed(refund);
 
         return toResponse(refundKey, RefundStatus.FAIL, refund.getAmount());
     }
