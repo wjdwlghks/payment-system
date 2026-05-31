@@ -23,7 +23,7 @@ public class RefundController {
     ) {
         return ResponseEntity.ok(new RefundResponse(
                 true,
-                UUID.randomUUID().toString(),
+                "refund-" + UUID.randomUUID(),
                 Instant.now()
         ));
     }
