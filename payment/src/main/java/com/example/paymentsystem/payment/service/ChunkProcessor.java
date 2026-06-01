@@ -1,6 +1,7 @@
 package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.ReconBatch;
+import com.example.paymentsystem.payment.domain.ReconBatchAbortReason;
 import com.example.paymentsystem.payment.domain.StagingFailed;
 import com.example.paymentsystem.payment.domain.StagingSettlement;
 import com.example.paymentsystem.payment.dto.ParsedSettlementRow;
@@ -67,27 +68,22 @@ public class ChunkProcessor {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void markIngested(Long batchId, int rowCount, long fileTotalAmount) {
+    public void markIngested(Long batchId, int rowCount, long fileTotalAmount, int ingestionFailedCount) {
         ReconBatch batch = reconBatchRepository.findById(batchId).orElseThrow();
-        batch.markIngested(rowCount, fileTotalAmount);
+        batch.markIngested(rowCount, fileTotalAmount, ingestionFailedCount);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void markIngestedPartial(Long batchId, int rowCount, long fileTotalAmount) {
+    public void markAborted(Long batchId, ReconBatchAbortReason reason, String message) {
         ReconBatch batch = reconBatchRepository.findById(batchId).orElseThrow();
-        batch.markIngestedPartial(rowCount, fileTotalAmount);
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void markAborted(Long batchId) {
-        ReconBatch batch = reconBatchRepository.findById(batchId).orElseThrow();
-        batch.markAborted();
+        batch.markAborted(reason, message);
     }
 
     private static StagingSettlement toStagingEntity(ReconBatch batchRef, ParsedSettlementRow row) {
         return new StagingSettlement(
                 batchRef,
                 row.approvalNo(),
+                row.cardRequestRef(),
                 row.amount(),
                 row.transactedAt(),
                 row.txType(),

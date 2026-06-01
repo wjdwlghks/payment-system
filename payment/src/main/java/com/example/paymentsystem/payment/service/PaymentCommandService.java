@@ -53,7 +53,8 @@ public class PaymentCommandService {
                 paymentIntent.getOrderId(),
                 paymentIntent.getMerchantId(),
                 paymentIntent.getAmount(),
-                transaction.getIdempotentKey()
+                transaction.getIdempotentKey(),
+                transaction.getCardRequestRef()
         );
     }
 
@@ -202,7 +203,8 @@ public class PaymentCommandService {
                 paymentIntent.getPaymentKey(),
                 paymentIntent.getOrderId(),
                 paymentIntent.getAmount(),
-                captureIdempotentKey
+                captureIdempotentKey,
+                captureTransaction.getCardRequestRef()
         );
     }
 

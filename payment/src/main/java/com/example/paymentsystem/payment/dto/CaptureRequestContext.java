@@ -7,7 +7,8 @@ public record CaptureRequestContext(
         String paymentKey,
         String orderId,
         Long amount,
-        String idempotentKey
+        String idempotentKey,
+        String cardRequestRef
 ) {
 }
 

@@ -5,6 +5,7 @@ public record RefundRequestContext(
         String paymentKey,
         String refundKey,
         String captureId,
-        Long amount
+        Long amount,
+        String cardRequestRef
 ) {
 }

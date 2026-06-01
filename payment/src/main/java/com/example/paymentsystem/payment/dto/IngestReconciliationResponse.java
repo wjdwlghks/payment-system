@@ -6,7 +6,7 @@ public record IngestReconciliationResponse(
         String businessDate,
         int rowCount,
         long fileTotalAmount,
-        int quarantineCount,
+        int ingestionFailedCount,
         String status
 ) {
 }

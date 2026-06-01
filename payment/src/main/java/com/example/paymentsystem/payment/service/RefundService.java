@@ -58,6 +58,7 @@ public class RefundService {
 
         CardRefundRequest cardRefundRequest = new CardRefundRequest(
                 refundContext.refundKey(),
+                refundContext.cardRequestRef(),
                 refundContext.amount()
         );
 

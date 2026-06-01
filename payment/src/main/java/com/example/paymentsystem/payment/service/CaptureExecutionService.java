@@ -43,6 +43,7 @@ public class CaptureExecutionService {
     private PaymentResponse capture(CaptureRequestContext captureContext, boolean retry) {
         CardCaptureRequest captureRequest = new CardCaptureRequest(
                 captureContext.idempotentKey(),
+                captureContext.cardRequestRef(),
                 captureContext.orderId(),
                 captureContext.amount()
         );

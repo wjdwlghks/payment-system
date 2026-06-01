@@ -104,6 +104,41 @@ public class ClearingService {
                 .map(PaymentTransaction::getUpdatedAt);
     }
 
+    @Transactional
+    public ClearingBatch clearForReconciliation(
+            ReconBatch reconBatch,
+            long netAmount,
+            List<PaymentTransaction> reconciledTransactions
+    ) {
+        if (netAmount <= 0) {
+            throw new IllegalArgumentException("netAmount must be positive, was: " + netAmount);
+        }
+        Instant windowStart = reconBatch.getBusinessDate().atStartOfDay(BATCH_CODE_ZONE).toInstant();
+        Instant windowEnd = reconBatch.getBusinessDate().plusDays(1).atStartOfDay(BATCH_CODE_ZONE).toInstant();
+
+        ClearingBatch batch = clearingBatchRepository.save(
+                new ClearingBatch(
+                        generateBatchCode(),
+                        windowStart,
+                        windowEnd,
+                        netAmount,
+                        reconciledTransactions.size()
+                )
+        );
+
+        for (PaymentTransaction tx : reconciledTransactions) {
+            clearingBatchItemRepository.save(
+                    new ClearingBatchItem(batch, tx, tx.getAmount())
+            );
+        }
+
+        ledgerService.postClearing(batch.getId(), netAmount);
+
+        batch.markCleared();
+
+        return batch;
+    }
+
     private String generateBatchCode() {
         String prefix = "CLR-" + LocalDate.now(BATCH_CODE_ZONE).format(BATCH_CODE_DATE_FORMATTER) + "-";
         int nextSequence = clearingBatchRepository

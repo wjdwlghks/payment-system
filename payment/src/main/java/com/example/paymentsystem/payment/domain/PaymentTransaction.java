@@ -14,6 +14,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.UUID;
 
 import lombok.*;
 
@@ -48,6 +49,9 @@ public class PaymentTransaction {
     @Column(name = "external_id", length = 100)
     private String externalId;
 
+    @Column(name = "card_request_ref", nullable = false, length = 100, updatable = false)
+    private String cardRequestRef;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -65,6 +69,7 @@ public class PaymentTransaction {
         this.amount = amount;
         this.idempotentKey = idempotentKey;
         this.status = TransactionStatus.REQUESTED;
+        this.cardRequestRef = "pg-" + UUID.randomUUID();
     }
 
     @PrePersist

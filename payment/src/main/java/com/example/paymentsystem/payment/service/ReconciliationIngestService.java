@@ -1,6 +1,7 @@
 package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.ReconBatch;
+import com.example.paymentsystem.payment.domain.ReconBatchAbortReason;
 import com.example.paymentsystem.payment.domain.ReconBatchStatus;
 import com.example.paymentsystem.payment.domain.SettlementStatus;
 import com.example.paymentsystem.payment.domain.SettlementType;
@@ -27,8 +28,8 @@ import org.springframework.stereotype.Service;
 public class ReconciliationIngestService {
 
     private static final String EXPECTED_HEADER =
-            "approval_no,amount,transacted_at,tx_type,tx_status,original_approval_no";
-    private static final int FIELD_COUNT = 6;
+            "card_request_ref,approval_no,amount,transacted_at,tx_type,tx_status,original_approval_no";
+    private static final int FIELD_COUNT = 7;
     private static final int FLUSH_CHUNK = 500;
     private static final int MAX_ATTEMPTS = 3;
 
@@ -49,21 +50,17 @@ public class ReconciliationIngestService {
             }
             stats = streamRows(batchId, reader);
         } catch (IOException e) {
-            chunkProcessor.markAborted(batchId);
+            chunkProcessor.markAborted(batchId, ReconBatchAbortReason.FILE_READ_ERROR, e.getMessage());
             throw new UncheckedIOException("failed to read reconciliation file: " + path, e);
+        } catch (IllegalArgumentException e) {
+            chunkProcessor.markAborted(batchId, ReconBatchAbortReason.HEADER_MISMATCH, e.getMessage());
+            throw e;
         } catch (RuntimeException e) {
-            chunkProcessor.markAborted(batchId);
+            chunkProcessor.markAborted(batchId, ReconBatchAbortReason.OTHER, e.getMessage());
             throw e;
         }
 
-        ReconBatchStatus finalStatus;
-        if (stats.quarantineCount() == 0) {
-            chunkProcessor.markIngested(batchId, stats.rowCount(), stats.totalAmount());
-            finalStatus = ReconBatchStatus.INGESTED;
-        } else {
-            chunkProcessor.markIngestedPartial(batchId, stats.rowCount(), stats.totalAmount());
-            finalStatus = ReconBatchStatus.INGESTED_PARTIAL;
-        }
+        chunkProcessor.markIngested(batchId, stats.rowCount(), stats.totalAmount(), stats.ingestionFailedCount());
 
         return new IngestReconciliationResponse(
                 batchId,
@@ -71,8 +68,8 @@ public class ReconciliationIngestService {
                 request.businessDate().toString(),
                 stats.rowCount(),
                 stats.totalAmount(),
-                stats.quarantineCount(),
-                finalStatus.name()
+                stats.ingestionFailedCount(),
+                ReconBatchStatus.INGESTED.name()
         );
     }
 
@@ -80,7 +77,7 @@ public class ReconciliationIngestService {
         List<ParsedSettlementRow> buffer = new ArrayList<>(FLUSH_CHUNK);
         int rowCount = 0;
         long totalAmount = 0;
-        int quarantineCount = 0;
+        int ingestionFailedCount = 0;
 
         String line;
         int lineNumber = 1;
@@ -95,16 +92,16 @@ public class ReconciliationIngestService {
             totalAmount += row.amount();
 
             if (buffer.size() >= FLUSH_CHUNK) {
-                quarantineCount += processChunk(batchId, buffer);
+                ingestionFailedCount += processChunk(batchId, buffer);
                 buffer.clear();
             }
         }
         if (!buffer.isEmpty()) {
-            quarantineCount += processChunk(batchId, buffer);
+            ingestionFailedCount += processChunk(batchId, buffer);
             buffer.clear();
         }
 
-        return new IngestStats(rowCount, totalAmount, quarantineCount);
+        return new IngestStats(rowCount, totalAmount, ingestionFailedCount);
     }
 
     private int processChunk(Long batchId, List<ParsedSettlementRow> buffer) {
@@ -125,13 +122,13 @@ public class ReconciliationIngestService {
     }
 
     private int rowByRowFallback(Long batchId, List<ParsedSettlementRow> rows) {
-        int quarantined = 0;
+        int failed = 0;
         for (ParsedSettlementRow row : rows) {
             if (!saveOneWithRetry(batchId, row)) {
-                quarantined++;
+                failed++;
             }
         }
-        return quarantined;
+        return failed;
     }
 
     private boolean saveOneWithRetry(Long batchId, ParsedSettlementRow row) {
@@ -160,14 +157,16 @@ public class ReconciliationIngestService {
             );
         }
 
-        String approvalNo = fields[0].trim();
-        long amount = parseLong(fields[1], "amount", lineNumber);
-        Instant transactedAt = parseInstant(fields[2], "transacted_at", lineNumber);
-        SettlementType txType = parseEnum(fields[3], SettlementType.class, "tx_type", lineNumber);
-        SettlementStatus txStatus = parseEnum(fields[4], SettlementStatus.class, "tx_status", lineNumber);
-        String originalApprovalNo = fields[5].trim().isEmpty() ? null : fields[5].trim();
+        String cardRequestRef = fields[0].trim();
+        String approvalNo = fields[1].trim();
+        long amount = parseLong(fields[2], "amount", lineNumber);
+        Instant transactedAt = parseInstant(fields[3], "transacted_at", lineNumber);
+        SettlementType txType = parseEnum(fields[4], SettlementType.class, "tx_type", lineNumber);
+        SettlementStatus txStatus = parseEnum(fields[5], SettlementStatus.class, "tx_status", lineNumber);
+        String originalApprovalNo = fields[6].trim().isEmpty() ? null : fields[6].trim();
 
         return new ParsedSettlementRow(
+                cardRequestRef,
                 approvalNo,
                 amount,
                 transactedAt,
@@ -226,6 +225,6 @@ public class ReconciliationIngestService {
         return name + ": " + msg;
     }
 
-    private record IngestStats(int rowCount, long totalAmount, int quarantineCount) {
+    private record IngestStats(int rowCount, long totalAmount, int ingestionFailedCount) {
     }
 }

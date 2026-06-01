@@ -34,6 +34,9 @@ public class StagingSettlement {
     @Column(name = "approval_no", nullable = false, length = 100)
     private String approvalNo;
 
+    @Column(name = "card_request_ref", nullable = false, length = 100)
+    private String cardRequestRef;
+
     @Column(nullable = false)
     private Long amount;
 
@@ -64,6 +67,7 @@ public class StagingSettlement {
     public StagingSettlement(
             ReconBatch reconBatch,
             String approvalNo,
+            String cardRequestRef,
             Long amount,
             Instant transactedAt,
             SettlementType txType,
@@ -75,6 +79,9 @@ public class StagingSettlement {
         }
         if (approvalNo == null || approvalNo.isBlank()) {
             throw new IllegalArgumentException("approvalNo must not be blank");
+        }
+        if (cardRequestRef == null || cardRequestRef.isBlank()) {
+            throw new IllegalArgumentException("cardRequestRef must not be blank");
         }
         if (amount == null || amount <= 0) {
             throw new IllegalArgumentException("amount must be positive");
@@ -93,6 +100,7 @@ public class StagingSettlement {
         }
         this.reconBatch = reconBatch;
         this.approvalNo = approvalNo;
+        this.cardRequestRef = cardRequestRef;
         this.amount = amount;
         this.transactedAt = transactedAt;
         this.txType = txType;

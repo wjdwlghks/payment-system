@@ -21,6 +21,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ReconBatch {
 
+    private static final int ABORT_MESSAGE_MAX_LENGTH = 65000;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -40,6 +42,25 @@ public class ReconBatch {
 
     @Column(name = "file_total_amount", nullable = false)
     private Long fileTotalAmount;
+
+    @Column(name = "ingestion_failed_count", nullable = false)
+    private Integer ingestionFailedCount;
+
+    @Column(name = "discrepancy_count", nullable = false)
+    private Integer discrepancyCount;
+
+    @Column(name = "auto_resolved_count", nullable = false)
+    private Integer autoResolvedCount;
+
+    @Column(name = "clearing_amount")
+    private Long clearingAmount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "abort_reason", length = 30)
+    private ReconBatchAbortReason abortReason;
+
+    @Column(name = "abort_message", columnDefinition = "TEXT")
+    private String abortMessage;
 
     @Column(name = "started_at", nullable = false)
     private Instant startedAt;
@@ -62,6 +83,9 @@ public class ReconBatch {
         this.status = ReconBatchStatus.INGESTING;
         this.rowCount = 0;
         this.fileTotalAmount = 0L;
+        this.ingestionFailedCount = 0;
+        this.discrepancyCount = 0;
+        this.autoResolvedCount = 0;
         this.startedAt = Instant.now();
     }
 
@@ -70,29 +94,41 @@ public class ReconBatch {
         this.createdAt = Instant.now();
     }
 
-    public void markIngested(int rowCount, long fileTotalAmount) {
+    public void markIngested(int rowCount, long fileTotalAmount, int ingestionFailedCount) {
         this.status = ReconBatchStatus.INGESTED;
         this.rowCount = rowCount;
         this.fileTotalAmount = fileTotalAmount;
-    }
-
-    public void markIngestedPartial(int rowCount, long fileTotalAmount) {
-        this.status = ReconBatchStatus.INGESTED_PARTIAL;
-        this.rowCount = rowCount;
-        this.fileTotalAmount = fileTotalAmount;
+        this.ingestionFailedCount = ingestionFailedCount;
     }
 
     public void markMatching() {
         this.status = ReconBatchStatus.MATCHING;
     }
 
-    public void markCompleted() {
+    public void markCompleted(int discrepancyCount, Long clearingAmount, int autoResolvedCount) {
         this.status = ReconBatchStatus.COMPLETED;
+        this.discrepancyCount = discrepancyCount;
+        this.clearingAmount = clearingAmount;
+        this.autoResolvedCount = autoResolvedCount;
         this.completedAt = Instant.now();
     }
 
-    public void markAborted() {
+    public void markAborted(ReconBatchAbortReason reason, String message) {
+        if (reason == null) {
+            throw new IllegalArgumentException("abort reason must not be null");
+        }
         this.status = ReconBatchStatus.ABORTED;
+        this.abortReason = reason;
+        this.abortMessage = truncate(message);
         this.completedAt = Instant.now();
+    }
+
+    private static String truncate(String message) {
+        if (message == null) {
+            return null;
+        }
+        return message.length() <= ABORT_MESSAGE_MAX_LENGTH
+                ? message
+                : message.substring(0, ABORT_MESSAGE_MAX_LENGTH);
     }
 }

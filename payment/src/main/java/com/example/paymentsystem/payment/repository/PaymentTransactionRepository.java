@@ -3,6 +3,7 @@ package com.example.paymentsystem.payment.repository;
 import com.example.paymentsystem.payment.domain.*;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -106,5 +107,25 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             @Param("batchStatus") ClearingBatchStatus batchStatus,
             @Param("windowStart") Instant windowStart,
             @Param("windowEnd") Instant windowEnd
+    );
+
+    @Query("""
+    select t
+    from PaymentTransaction t
+    where t.type in :types
+      and t.status in :statuses
+      and t.createdAt >= :rangeStart
+      and t.createdAt < :rangeEnd
+      and not exists (
+          select 1
+          from ClearingBatchItem item
+          where item.transaction = t
+      )
+""")
+    List<PaymentTransaction> findForReconciliation(
+            @Param("types") Collection<TransactionType> types,
+            @Param("statuses") Collection<TransactionStatus> statuses,
+            @Param("rangeStart") Instant rangeStart,
+            @Param("rangeEnd") Instant rangeEnd
     );
 }

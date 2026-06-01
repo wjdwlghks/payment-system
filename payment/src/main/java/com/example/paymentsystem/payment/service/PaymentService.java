@@ -57,6 +57,7 @@ public class PaymentService {
 
         CardAuthRequest authRequest = new CardAuthRequest(
                 authContext.idempotentKey(),
+                authContext.cardRequestRef(),
                 authContext.orderId(),
                 authContext.merchantId(),
                 authContext.amount()

@@ -63,7 +63,14 @@ public class RefundCommandService {
 
         refundRepository.save(refund);
 
-        return new RefundRequestContext(refundTx.getId(), request.paymentKey(), request.refundKey(), paymentIntent.getCaptureId(), request.amount());
+        return new RefundRequestContext(
+                refundTx.getId(),
+                request.paymentKey(),
+                request.refundKey(),
+                paymentIntent.getCaptureId(),
+                request.amount(),
+                refundTx.getCardRequestRef()
+        );
     }
 
     @Transactional
