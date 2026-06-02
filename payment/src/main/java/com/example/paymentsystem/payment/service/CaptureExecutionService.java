@@ -3,6 +3,7 @@ package com.example.paymentsystem.payment.service;
 import com.example.paymentsystem.payment.client.card.CardCaptureRequest;
 import com.example.paymentsystem.payment.client.card.CardCaptureResponse;
 import com.example.paymentsystem.payment.client.card.CardClient;
+import com.example.paymentsystem.payment.domain.LedgerSourceType;
 import com.example.paymentsystem.payment.domain.PaymentIntent;
 import com.example.paymentsystem.payment.domain.PaymentIntentStatus;
 import com.example.paymentsystem.payment.dto.CaptureRequestContext;
@@ -51,7 +52,7 @@ public class CaptureExecutionService {
         return externalCallExecutor.execute(
                 () -> capture(retry, captureContext, captureRequest),
                 response -> response.success()
-                        ? paymentCommandService.completeCapture(captureContext.transactionId(), response.externalId())
+                        ? paymentCommandService.completeCapture(captureContext.transactionId(), response.externalId(), LedgerSourceType.PAYMENT_TRANSACTION)
                         : paymentCommandService.failCapture(captureContext.transactionId(), response.externalId()),
                 () -> paymentCommandService.unknownCapture(captureContext.transactionId()),
                 () -> paymentCommandService.failCapture(captureContext.transactionId(), null)

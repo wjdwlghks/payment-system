@@ -1,5 +1,6 @@
 package com.example.paymentsystem.payment.service;
 
+import com.example.paymentsystem.payment.domain.LedgerSourceType;
 import com.example.paymentsystem.payment.domain.Refund;
 import com.example.paymentsystem.payment.repository.RefundRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +18,7 @@ public class UnknownReconciler {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void reconcileCaptureApproved(Long txId, String externalId) {
-        paymentCommandService.completeCapture(txId, externalId);
+        paymentCommandService.completeCapture(txId, externalId, LedgerSourceType.RECON_ADJUSTMENT);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -31,7 +32,7 @@ public class UnknownReconciler {
                 .orElseThrow(() -> new IllegalStateException(
                         "refund not found for refund transaction id=" + txId
                 ));
-        refundCommandService.completeRefund(txId, refund.getRefundKey(), refund.getAmount(), externalId);
+        refundCommandService.completeRefund(txId, refund.getRefundKey(), refund.getAmount(), externalId, LedgerSourceType.RECON_ADJUSTMENT);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

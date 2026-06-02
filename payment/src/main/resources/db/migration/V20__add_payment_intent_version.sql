@@ -1,0 +1,2 @@
+ALTER TABLE payment_intent
+    ADD COLUMN version BIGINT NOT NULL DEFAULT 0;

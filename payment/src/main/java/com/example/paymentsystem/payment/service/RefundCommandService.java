@@ -8,7 +8,11 @@ import com.example.paymentsystem.payment.exception.RefundValidationException;
 import com.example.paymentsystem.payment.repository.PaymentIntentRepository;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
 import com.example.paymentsystem.payment.repository.RefundRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,7 +27,9 @@ public class RefundCommandService {
     private final RefundRepository refundRepository;
     private final LedgerService ledgerService;
     private final WebhookService webhookService;
+    private final EntityManager entityManager;
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public RefundRequestContext createRefundRequest(RefundRequest request) {
         PaymentIntent paymentIntent = paymentIntentRepository.findByPaymentKey(request.paymentKey())
@@ -32,6 +38,8 @@ public class RefundCommandService {
             paymentIntent.getStatus() != PaymentIntentStatus.PARTIALLY_REFUNDED) {
             throw new RefundValidationException(409, "Payment is not in DONE or PARTIALLY_REFUNDED state");
         }
+
+        entityManager.lock(paymentIntent, LockModeType.OPTIMISTIC_FORCE_INCREMENT);
 
         List<Refund> refunds = refundRepository.findByPaymentIntent(paymentIntent);
         Long refundAmount = 0L;
@@ -73,11 +81,17 @@ public class RefundCommandService {
         );
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
-    public RefundResponse completeRefund(Long txId, String refundKey, Long refundedAmount, String externalId) {
+    public RefundResponse completeRefund(Long txId, String refundKey, Long refundedAmount, String externalId, LedgerSourceType sourceType) {
         PaymentTransaction transaction = getTransaction(txId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         Refund refund = getRefund(refundKey);
+
+        if (transaction.getStatus() != TransactionStatus.REQUESTED
+                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
+            return toResponse(refundKey, refund.getStatus(), refund.getAmount());
+        }
 
         paymentIntent.addRefundedAmount(refundedAmount);
         if (paymentIntent.getRefundedAmount().equals(paymentIntent.getAmount())) {
@@ -89,7 +103,7 @@ public class RefundCommandService {
         transaction.markSucceeded(externalId);
 
         webhookService.saveRefundSucceeded(refund);
-        ledgerService.postRefund(txId);
+        ledgerService.postRefund(txId, sourceType);
 
         return toResponse(refundKey, RefundStatus.SUCCEEDED, refund.getAmount());
     }
@@ -98,6 +112,10 @@ public class RefundCommandService {
     public RefundResponse unknownRefund(Long txId, String refundKey) {
         PaymentTransaction transaction = getTransaction(txId);
         Refund refund = getRefund(refundKey);
+
+        if (transaction.getStatus() != TransactionStatus.REQUESTED) {
+            return toResponse(refundKey, refund.getStatus(), refund.getAmount());
+        }
 
         refund.markUnknown();
         transaction.markUnknown();
@@ -109,6 +127,11 @@ public class RefundCommandService {
     public RefundResponse failRefund(Long txId, String refundKey, String externalId) {
         PaymentTransaction transaction = getTransaction(txId);
         Refund refund = getRefund(refundKey);
+
+        if (transaction.getStatus() != TransactionStatus.REQUESTED
+                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
+            return toResponse(refundKey, refund.getStatus(), refund.getAmount());
+        }
 
         refund.markFail(externalId);
         transaction.markFail(externalId);

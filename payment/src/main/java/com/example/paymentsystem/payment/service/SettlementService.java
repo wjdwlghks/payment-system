@@ -7,6 +7,8 @@ import com.example.paymentsystem.payment.repository.SettlementItemRepository;
 import com.example.paymentsystem.payment.repository.SettlementRunRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,7 @@ public class SettlementService {
     private final SettlementItemRepository settlementItemRepository;
     private final PaymentTransactionRepository paymentTransactionRepository;
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public SettlementRunResponse settlementRun() {
         Instant windowEnd = Instant.now().minus(10, ChronoUnit.SECONDS);

@@ -7,6 +7,8 @@ import com.example.paymentsystem.payment.dto.PayoutResponse;
 import com.example.paymentsystem.payment.repository.AccountRepository;
 import com.example.paymentsystem.payment.repository.PayoutRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +28,7 @@ public class PayoutService {
     private final AccountRepository accountRepository;
     private final PayoutRepository payoutRepository;
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public PayoutResponse payout(String merchantId) {
         Optional<Account> optionalMerchantAvailable = accountRepository.findByAccountTypeAndMerchantId(

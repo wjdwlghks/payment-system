@@ -1,5 +1,6 @@
 package com.example.paymentsystem.payment.service;
 
+import com.example.paymentsystem.payment.domain.LedgerSourceType;
 import com.example.paymentsystem.payment.domain.PaymentIntent;
 import com.example.paymentsystem.payment.domain.PaymentTransaction;
 import com.example.paymentsystem.payment.domain.TransactionStatus;
@@ -9,9 +10,9 @@ import com.example.paymentsystem.payment.repository.PaymentIntentRepository;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
 import java.time.Instant;
 import java.util.UUID;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,46 +59,76 @@ public class PaymentCommandService {
         );
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public PaymentResponse completeAuth(Long transactionId, String externalId, Instant authorizedAt) {
-        return update(transactionId, (paymentIntent, transaction) -> {
-            paymentIntent.markAuthReady(authorizedAt);
-            transaction.markSucceeded(externalId);
-        }, webhookService::saveAuthReady);
+        PaymentTransaction transaction = getTransaction(transactionId);
+        PaymentIntent paymentIntent = transaction.getPaymentIntent();
+        if (transaction.getStatus() != TransactionStatus.REQUESTED
+                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
+            return toResponse(paymentIntent);
+        }
+        paymentIntent.markAuthReady(authorizedAt);
+        transaction.markSucceeded(externalId);
+        webhookService.saveAuthReady(paymentIntent);
+        return toResponse(paymentIntent);
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public PaymentResponse failAuth(Long transactionId, String externalId) {
-        return update(transactionId, (paymentIntent, transaction) -> {
-            paymentIntent.markAuthFailed();
-            markFail(transaction, externalId);
-        }, webhookService::saveAuthFailed);
+        PaymentTransaction transaction = getTransaction(transactionId);
+        PaymentIntent paymentIntent = transaction.getPaymentIntent();
+        if (transaction.getStatus() != TransactionStatus.REQUESTED
+                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
+            return toResponse(paymentIntent);
+        }
+        paymentIntent.markAuthFailed();
+        markFail(transaction, externalId);
+        webhookService.saveAuthFailed(paymentIntent);
+        return toResponse(paymentIntent);
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public PaymentResponse unknownAuth(Long transactionId) {
-        return update(transactionId, (paymentIntent, transaction) -> {
-            paymentIntent.markAuthUnknown();
-            transaction.markUnknown();
-        });
+        PaymentTransaction transaction = getTransaction(transactionId);
+        PaymentIntent paymentIntent = transaction.getPaymentIntent();
+        if (transaction.getStatus() != TransactionStatus.REQUESTED) {
+            return toResponse(paymentIntent);
+        }
+        paymentIntent.markAuthUnknown();
+        transaction.markUnknown();
+        return toResponse(paymentIntent);
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public PaymentResponse unknownFds(Long transactionId) {
-        return update(transactionId, (paymentIntent, transaction) -> {
-            paymentIntent.markFdsUnknown();
-            transaction.markUnknown();
-        });
+        PaymentTransaction transaction = getTransaction(transactionId);
+        PaymentIntent paymentIntent = transaction.getPaymentIntent();
+        if (transaction.getStatus() != TransactionStatus.REQUESTED) {
+            return toResponse(paymentIntent);
+        }
+        paymentIntent.markFdsUnknown();
+        transaction.markUnknown();
+        return toResponse(paymentIntent);
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public PaymentResponse unknownCapture(Long transactionId) {
-        return update(transactionId, (paymentIntent, transaction) -> {
-            paymentIntent.markCaptureUnknown();
-            transaction.markUnknown();
-        });
+        PaymentTransaction transaction = getTransaction(transactionId);
+        PaymentIntent paymentIntent = transaction.getPaymentIntent();
+        if (transaction.getStatus() != TransactionStatus.REQUESTED) {
+            return toResponse(paymentIntent);
+        }
+        paymentIntent.markCaptureUnknown();
+        transaction.markUnknown();
+        return toResponse(paymentIntent);
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public FdsRequestContext createFdsRequest(String paymentKey) {
         PaymentIntent paymentIntent = paymentIntentRepository.findByPaymentKey(paymentKey)
@@ -124,42 +155,67 @@ public class PaymentCommandService {
         );
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public PaymentResponse failFds(Long transactionId, String externalId) {
-        return update(transactionId, (paymentIntent, transaction) -> {
-            paymentIntent.markFdsFailed();
-            markFail(transaction, externalId);
-        }, webhookService::saveFdsFailed);
+        PaymentTransaction transaction = getTransaction(transactionId);
+        PaymentIntent paymentIntent = transaction.getPaymentIntent();
+        if (transaction.getStatus() != TransactionStatus.REQUESTED
+                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
+            return toResponse(paymentIntent);
+        }
+        paymentIntent.markFdsFailed();
+        markFail(transaction, externalId);
+        webhookService.saveFdsFailed(paymentIntent);
+        return toResponse(paymentIntent);
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public PaymentResponse completeFds(Long transactionId, String externalId) {
-        return update(transactionId, (paymentIntent, transaction) -> {
-            paymentIntent.markFdsReady();
-            transaction.markSucceeded(externalId);
-        });
+        PaymentTransaction transaction = getTransaction(transactionId);
+        PaymentIntent paymentIntent = transaction.getPaymentIntent();
+        if (transaction.getStatus() != TransactionStatus.REQUESTED
+                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
+            return toResponse(paymentIntent);
+        }
+        paymentIntent.markFdsReady();
+        transaction.markSucceeded(externalId);
+        return toResponse(paymentIntent);
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public PaymentResponse failCapture(Long transactionId, String externalId) {
-        return update(transactionId, (paymentIntent, transaction) -> {
-            paymentIntent.markCaptureFailed();
-            markFail(transaction, externalId);
-        }, webhookService::saveCaptureFailed);
+        PaymentTransaction transaction = getTransaction(transactionId);
+        PaymentIntent paymentIntent = transaction.getPaymentIntent();
+        if (transaction.getStatus() != TransactionStatus.REQUESTED
+                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
+            return toResponse(paymentIntent);
+        }
+        paymentIntent.markCaptureFailed();
+        markFail(transaction, externalId);
+        webhookService.saveCaptureFailed(paymentIntent);
+        return toResponse(paymentIntent);
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
-    public PaymentResponse completeCapture(Long captureTransactionId, String externalId) {
-        PaymentResponse response = update(captureTransactionId, (paymentIntent, transaction) -> {
-            paymentIntent.markDone(externalId);
-            transaction.markSucceeded(externalId);
-        }, webhookService::savePaymentComplete);
-
-        ledgerService.postCapture(captureTransactionId);
-
-        return response;
+    public PaymentResponse completeCapture(Long captureTransactionId, String externalId, LedgerSourceType sourceType) {
+        PaymentTransaction transaction = getTransaction(captureTransactionId);
+        PaymentIntent paymentIntent = transaction.getPaymentIntent();
+        if (transaction.getStatus() != TransactionStatus.REQUESTED
+                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
+            return toResponse(paymentIntent);
+        }
+        paymentIntent.markDone(externalId);
+        transaction.markSucceeded(externalId);
+        webhookService.savePaymentComplete(paymentIntent);
+        ledgerService.postCapture(captureTransactionId, sourceType);
+        return toResponse(paymentIntent);
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public CaptureRequestContext completeFdsAndCreateCaptureRequest(
             Long fdsTransactionId,
@@ -173,6 +229,7 @@ public class PaymentCommandService {
         return createCaptureRequest(paymentIntent.getPaymentKey());
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public CaptureRequestContext createCaptureRequest(String paymentKey) {
         PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
@@ -227,25 +284,6 @@ public class PaymentCommandService {
                 paymentIntent.getAmount(),
                 paymentIntent.getAuthorizedAt()
         );
-    }
-
-    private PaymentResponse update(
-            Long transactionId,
-            BiConsumer<PaymentIntent, PaymentTransaction> updater
-    ) {
-        return update(transactionId, updater, paymentIntent -> {});
-    }
-
-    private PaymentResponse update(
-            Long transactionId,
-            BiConsumer<PaymentIntent, PaymentTransaction> updater,
-            Consumer<PaymentIntent> afterUpdate
-    ) {
-        PaymentTransaction transaction = getTransaction(transactionId);
-        PaymentIntent paymentIntent = transaction.getPaymentIntent();
-        updater.accept(paymentIntent, transaction);
-        afterUpdate.accept(paymentIntent);
-        return toResponse(paymentIntent);
     }
 
     private void markFail(PaymentTransaction transaction, String externalId) {

@@ -22,6 +22,11 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
 
     List<PaymentTransaction> findTop3ByStatusOrderByUpdatedAtAsc(TransactionStatus status);
 
+    List<PaymentTransaction> findTop3ByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
+            TransactionStatus status,
+            Instant updatedAtBefore
+    );
+
     @Query("""
     select t
     from PaymentTransaction t

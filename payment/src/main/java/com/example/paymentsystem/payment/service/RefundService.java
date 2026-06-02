@@ -7,6 +7,7 @@ import com.example.paymentsystem.payment.client.card.CardRefundResponse;
 import com.example.paymentsystem.payment.domain.IdempotencyKey;
 import com.example.paymentsystem.payment.domain.IdempotencyOperation;
 import com.example.paymentsystem.payment.domain.IdempotentStatus;
+import com.example.paymentsystem.payment.domain.LedgerSourceType;
 import com.example.paymentsystem.payment.dto.*;
 import com.example.paymentsystem.payment.exception.RefundValidationException;
 import lombok.RequiredArgsConstructor;
@@ -84,7 +85,7 @@ public class RefundService {
             CardRefundResponse response
     ) {
         RefundResponse refundResponse = response.success()
-                ? refundCommandService.completeRefund(context.transactionId(), context.refundKey(), context.amount(), response.externalId())
+                ? refundCommandService.completeRefund(context.transactionId(), context.refundKey(), context.amount(), response.externalId(), LedgerSourceType.REFUND_TRANSACTION)
                 : refundCommandService.failRefund(context.transactionId(), context.refundKey(), response.externalId());
 
         return completeRequest(idempotentKey, IdempotencyOperation.PAYMENT_REFUND, refundResponse);

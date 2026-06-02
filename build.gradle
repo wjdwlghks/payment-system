@@ -51,6 +51,8 @@ project(':payment') {
         implementation 'commons-codec:commons-codec:1.17.1'
         implementation 'org.flywaydb:flyway-core:11.7.2'
         implementation 'org.flywaydb:flyway-mysql:11.7.2'
+        implementation 'org.springframework.retry:spring-retry:2.0.12'
+        implementation 'org.springframework:spring-aspects'
         runtimeOnly 'com.mysql:mysql-connector-j:9.3.0'
     }
 }

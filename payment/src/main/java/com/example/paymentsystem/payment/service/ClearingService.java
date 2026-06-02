@@ -7,6 +7,8 @@ import com.example.paymentsystem.payment.repository.ClearingBatchRepository;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,7 @@ public class ClearingService {
     private final ClearingBatchItemRepository clearingBatchItemRepository;
     private final LedgerService ledgerService;
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public ClearingBatchResponse clearing() {
         Instant windowEnd = Instant.now().minus(10, ChronoUnit.SECONDS);
@@ -104,6 +107,7 @@ public class ClearingService {
                 .map(PaymentTransaction::getUpdatedAt);
     }
 
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
     @Transactional
     public ClearingBatch clearForReconciliation(
             ReconBatch reconBatch,
