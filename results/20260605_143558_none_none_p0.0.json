@@ -1,0 +1,96 @@
+{
+  "scenario": {
+    "failure_location": "none",
+    "failure_type": "none",
+    "trigger_probability": 0.0,
+    "vus": 5,
+    "duration": "30s"
+  },
+  "recovery": {
+    "retry": {
+      "cardAuth": {
+        "attempts": 0,
+        "succeededAfterRetry": 0,
+        "failedAfterRetry": 0
+      },
+      "cardCapture": {
+        "attempts": 0,
+        "succeededAfterRetry": 0,
+        "failedAfterRetry": 0
+      },
+      "cardRefund": {
+        "attempts": 0,
+        "succeededAfterRetry": 0,
+        "failedAfterRetry": 0
+      },
+      "fdsCheck": {
+        "attempts": 0,
+        "succeededAfterRetry": 0,
+        "failedAfterRetry": 0
+      }
+    },
+    "inquiry": {
+      "auth": {
+        "total": 0,
+        "success": 0,
+        "failed": 0,
+        "notFound": 0,
+        "inProgress": 0
+      },
+      "fds": {
+        "total": 0,
+        "success": 0,
+        "failed": 0,
+        "notFound": 0,
+        "inProgress": 0
+      },
+      "capture": {
+        "total": 5,
+        "success": 5,
+        "failed": 0,
+        "notFound": 0,
+        "inProgress": 0
+      },
+      "refund": {
+        "total": 0,
+        "success": 0,
+        "failed": 0,
+        "notFound": 0,
+        "inProgress": 0
+      }
+    },
+    "reconAutoResolved": 0
+  },
+  "verify": {
+    "A_pg_internal": {
+      "doneWithoutCapture": 0,
+      "captureWithoutDone": 0,
+      "unknownRemaining": 0,
+      "pendingOutbox": 0,
+      "reconDiscrepancy": 0,
+      "processingIdempotencyKeys": 0,
+      "passed": true
+    },
+    "B_auth_diff": {
+      "pg_only": [],
+      "card_only": [],
+      "diff_count": 0
+    },
+    "B_capture_diff": {
+      "pg_only": [],
+      "card_only": [],
+      "diff_count": 0
+    },
+    "C_ledger": {
+      "unbalancedPostings": 0,
+      "cardNetworkReceivableBalance": 0,
+      "passed": true
+    },
+    "D_idempotency": {
+      "processingIdempotencyKeys": 0,
+      "passed": true
+    }
+  },
+  "passed": true,
+  "k6_summary_file": "/Users/jih/projects/payment-system/scripts/../results/20260605_143558_none_none_p0.0.json.k6.json"
+}

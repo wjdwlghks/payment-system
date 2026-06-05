@@ -141,11 +141,11 @@ public class LedgerService {
     }
 
     private Account globalAccount(AccountType type) {
-        return accountRepository.findByAccountTypeAndMerchantId(type, GLOBAL).orElseThrow();
+        return accountRepository.findByAccountTypeAndMerchantIdForUpdate(type, GLOBAL).orElseThrow();
     }
 
     private Account merchantAccount(AccountType type, String merchantId) {
-        return accountRepository.findByAccountTypeAndMerchantId(type, merchantId)
+        return accountRepository.findByAccountTypeAndMerchantIdForUpdate(type, merchantId)
                 .orElseGet(() -> accountRepository.save(new Account(type, AccountClass.LIABILITY, merchantId)));
     }
 

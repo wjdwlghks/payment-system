@@ -11,6 +11,7 @@ import com.example.paymentsystem.payment.repository.RefundRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
@@ -29,7 +30,7 @@ public class RefundCommandService {
     private final WebhookService webhookService;
     private final EntityManager entityManager;
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public RefundRequestContext createRefundRequest(RefundRequest request) {
         PaymentIntent paymentIntent = paymentIntentRepository.findByPaymentKey(request.paymentKey())
@@ -81,7 +82,7 @@ public class RefundCommandService {
         );
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public RefundResponse completeRefund(Long txId, String refundKey, Long refundedAmount, String externalId, LedgerSourceType sourceType) {
         PaymentTransaction transaction = getTransaction(txId);

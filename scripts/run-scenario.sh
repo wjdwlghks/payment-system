@@ -16,7 +16,7 @@
 set -euo pipefail
 
 FAILURE_LOCATION=${1:-none}
-FAILURE_TYPE=${2:-CONNECT_FAILURE}
+FAILURE_TYPE=${2:-none}
 TRIGGER_PROBABILITY=${3:-0.3}
 VUS=${4:-10}
 DURATION=${5:-30s}
@@ -102,6 +102,20 @@ k6 run \
   -e DURATION="$DURATION" \
   -e SUMMARY_FILE="$RESULT_FILE.k6.json" \
   "$(dirname "$0")/../k6/scenario.js"
+
+# ── 4-1. Row lock 통계 (k6 종료 후, MySQL 재시작으로 0에서 누적) ─────────────
+log "=== 4-1. Row lock stats ==="
+ROW_LOCK_RAW=$(docker exec payment-mysql mysql -uroot -proot -se \
+  "SHOW STATUS LIKE 'Innodb_row_lock%'" 2>/dev/null)
+ROW_LOCK_STATS=$(echo "$ROW_LOCK_RAW" | python3 -c "
+import sys, json
+d = {}
+for line in sys.stdin:
+    k, v = line.strip().split('\t')
+    d[k] = int(v)
+print(json.dumps(d))
+")
+log "Row lock stats: $ROW_LOCK_STATS"
 
 # ── 5. 수렴 대기 (폴링 + 수동 스케줄러 트리거) ───────────────────────────────
 log "=== 5. Convergence polling ==="
@@ -210,6 +224,7 @@ result = {
         "duration":            "$DURATION",
     },
     "recovery":    json.loads('''$RECOVERY'''),
+    "row_lock":    json.loads('''$ROW_LOCK_STATS'''),
     "verify": {
         "A_pg_internal":  json.loads('''$PG_INTERNAL'''),
         "B_auth_diff":    json.loads('''$AUTH_DIFF'''),

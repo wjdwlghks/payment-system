@@ -12,7 +12,7 @@ import java.util.List;
 
 public interface WebhookOutboxRepository extends JpaRepository<WebhookOutbox, Long> {
 
-    List<WebhookOutbox> findTop30ByStatusAndNextAttemptAtLessThanEqualOrderByIdAsc(
+    List<WebhookOutbox> findTop150ByStatusAndNextAttemptAtLessThanEqualOrderByIdAsc(
             WebhookOutboxStatus status,
             Instant nextAttemptAt
     );

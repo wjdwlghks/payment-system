@@ -11,6 +11,7 @@ import com.example.paymentsystem.payment.repository.PaymentTransactionRepository
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
@@ -59,7 +60,7 @@ public class PaymentCommandService {
         );
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentResponse completeAuth(Long transactionId, String externalId, Instant authorizedAt) {
         PaymentTransaction transaction = getTransaction(transactionId);
@@ -74,7 +75,7 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentResponse failAuth(Long transactionId, String externalId) {
         PaymentTransaction transaction = getTransaction(transactionId);
@@ -89,7 +90,7 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentResponse unknownAuth(Long transactionId) {
         PaymentTransaction transaction = getTransaction(transactionId);
@@ -102,7 +103,7 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentResponse unknownFds(Long transactionId) {
         PaymentTransaction transaction = getTransaction(transactionId);
@@ -115,7 +116,7 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentResponse unknownCapture(Long transactionId) {
         PaymentTransaction transaction = getTransaction(transactionId);
@@ -128,7 +129,7 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public FdsRequestContext createFdsRequest(String paymentKey) {
         PaymentIntent paymentIntent = paymentIntentRepository.findByPaymentKey(paymentKey)
@@ -155,7 +156,7 @@ public class PaymentCommandService {
         );
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentResponse failFds(Long transactionId, String externalId) {
         PaymentTransaction transaction = getTransaction(transactionId);
@@ -170,7 +171,7 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentResponse completeFds(Long transactionId, String externalId) {
         PaymentTransaction transaction = getTransaction(transactionId);
@@ -184,7 +185,7 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentResponse failCapture(Long transactionId, String externalId) {
         PaymentTransaction transaction = getTransaction(transactionId);
@@ -199,7 +200,7 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentResponse completeCapture(Long captureTransactionId, String externalId, LedgerSourceType sourceType) {
         PaymentTransaction transaction = getTransaction(captureTransactionId);
@@ -215,7 +216,7 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public CaptureRequestContext completeFdsAndCreateCaptureRequest(
             Long fdsTransactionId,
@@ -229,7 +230,7 @@ public class PaymentCommandService {
         return createCaptureRequest(paymentIntent.getPaymentKey());
     }
 
-    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class, maxAttempts = 3)
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public CaptureRequestContext createCaptureRequest(String paymentKey) {
         PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
