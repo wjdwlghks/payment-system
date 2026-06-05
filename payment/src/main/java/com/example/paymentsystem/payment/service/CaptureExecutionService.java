@@ -25,7 +25,7 @@ public class CaptureExecutionService {
 
     @Transactional(readOnly = true)
     public List<PaymentIntent> getFdsReadyPaymentIntents() {
-        return paymentIntentRepository.findTop3ByStatusOrderByUpdatedAtAsc(PaymentIntentStatus.FDS_READY);
+        return paymentIntentRepository.findTop30ByStatusOrderByUpdatedAtAsc(PaymentIntentStatus.FDS_READY);
     }
 
     public void capture(PaymentIntent paymentIntent) {

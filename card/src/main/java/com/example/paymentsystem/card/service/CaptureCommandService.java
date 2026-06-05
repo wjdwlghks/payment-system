@@ -27,7 +27,7 @@ public class CaptureCommandService {
     private final ObjectMapper objectMapper;
 
     @Transactional
-    public ApiResult capture(String authId, String idempotentKey, String hash) {
+    public ApiResult capture(String authId, String idempotentKey, String hash, String cardRequestRef) {
         CardAuthorization auth = getAuth(authId);
 
         // 순차 재요청: 최신 row가 이미 capture 되었을 수 있다.
@@ -37,7 +37,7 @@ public class CaptureCommandService {
         }
 
         String captureId = "capture-" + UUID.randomUUID();
-        auth.capture(captureId, idempotentKey, hash, Instant.now());
+        auth.capture(captureId, idempotentKey, hash, cardRequestRef, Instant.now());
         entityManager.flush();
 
         return successResult(captureId);

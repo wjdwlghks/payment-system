@@ -8,6 +8,8 @@ services:
     container_name: merchant
     ports:
       - "8081:8080"
+    environment:
+      PAYMENT_BASE_URL: http://payment:8080
     depends_on:
       - payment
 
@@ -29,6 +31,8 @@ services:
       CARD_BASE_URL: http://card:8080
       FDS_BASE_URL: http://fds:8080
       MERCHANT_BASE_URL: http://merchant:8080
+    volumes:
+      - recon-files:/recon-files
     depends_on:
       payment-mysql:
         condition: service_healthy
@@ -71,6 +75,8 @@ services:
       MYSQL_DATABASE: card
       MYSQL_USER: card
       MYSQL_PASSWORD: card
+    volumes:
+      - recon-files:/recon-files
     depends_on:
       card-mysql:
         condition: service_healthy
@@ -133,3 +139,4 @@ volumes:
   payment-mysql-data:
   card-mysql-data:
   fds-mysql-data:
+  recon-files:

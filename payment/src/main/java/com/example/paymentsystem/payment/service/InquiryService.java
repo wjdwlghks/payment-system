@@ -5,6 +5,7 @@ import com.example.paymentsystem.payment.client.card.CardClient;
 import com.example.paymentsystem.payment.client.card.CaptureInquiryResponse;
 import com.example.paymentsystem.payment.client.fds.FdsClient;
 import com.example.paymentsystem.payment.client.fds.FdsInquiryResponse;
+import com.example.paymentsystem.payment.component.RecoveryCounter;
 import com.example.paymentsystem.payment.domain.LedgerSourceType;
 import com.example.paymentsystem.payment.domain.PaymentTransaction;
 import com.example.paymentsystem.payment.domain.Refund;
@@ -33,24 +34,26 @@ public class InquiryService {
     private final ExternalCallExecutor externalCallExecutor;
     private final PaymentCommandService paymentCommandService;
     private final RefundCommandService refundCommandService;
+    private final RecoveryCounter recoveryCounter;
 
     @Transactional(readOnly = true)
     public List<PaymentTransaction> getUnknowns() {
         return paymentTransactionRepository
-                .findTop3ByStatusOrderByUpdatedAtAsc(TransactionStatus.UNKNOWN);
+                .findTop30ByStatusOrderByUpdatedAtAsc(TransactionStatus.UNKNOWN);
     }
 
     @Transactional(readOnly = true)
     public List<PaymentTransaction> getStaleRequested() {
         Instant threshold = Instant.now().minus(STALE_REQUESTED_THRESHOLD);
         return paymentTransactionRepository
-                .findTop3ByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
+                .findTop30ByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
                         TransactionStatus.REQUESTED,
                         threshold
                 );
     }
 
     public void inquiryAuth(PaymentTransaction transaction) {
+        recoveryCounter.incrementInquiryTotal("auth");
         String authIdempotentKey = transaction.getIdempotentKey();
         externalCallExecutor.executeVoid(
                 () -> cardClient.inquiryAuth(authIdempotentKey),
@@ -61,6 +64,7 @@ public class InquiryService {
     }
 
     public void inquiryFds(PaymentTransaction transaction) {
+        recoveryCounter.incrementInquiryTotal("fds");
         String fdsIdempotencyKey = transaction.getIdempotentKey();
         externalCallExecutor.executeVoid(
                 () -> fdsClient.inquiry(fdsIdempotencyKey),
@@ -71,6 +75,7 @@ public class InquiryService {
     }
 
     public void inquiryCapture(PaymentTransaction transaction) {
+        recoveryCounter.incrementInquiryTotal("capture");
         String captureIdempotentKey = transaction.getIdempotentKey();
         externalCallExecutor.executeVoid(
                 () -> cardClient.inquiryCapture(captureIdempotentKey),
@@ -81,6 +86,7 @@ public class InquiryService {
     }
 
     public void inquiryRefund(PaymentTransaction transaction) {
+        recoveryCounter.incrementInquiryTotal("refund");
         Refund refund = refundRepository.findByTransactionId(transaction.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Refund not found for transaction: " + transaction.getId()));
         String refundKey = refund.getRefundKey();
@@ -93,6 +99,7 @@ public class InquiryService {
     }
 
     private void handleRefundInquiry(PaymentTransaction transaction, Refund refund, RefundInquiryResponse response) {
+        recoveryCounter.incrementInquiryResult("refund", response.status());
         switch (response.status()) {
             case "success" -> refundCommandService.completeRefund(
                     transaction.getId(), refund.getRefundKey(), refund.getAmount(), response.externalId(), LedgerSourceType.REFUND_TRANSACTION
@@ -104,6 +111,7 @@ public class InquiryService {
     }
 
     private void handleAuthInquiry(PaymentTransaction transaction, AuthInquiryResponse response) {
+        recoveryCounter.incrementInquiryResult("auth", response.status());
         switch (response.status()) {
             case "success" -> paymentCommandService.completeAuth(
                     transaction.getId(),
@@ -117,6 +125,7 @@ public class InquiryService {
     }
 
     private void handleFdsInquiry(PaymentTransaction transaction, FdsInquiryResponse response) {
+        recoveryCounter.incrementInquiryResult("fds", response.status());
         switch (response.status()) {
             case "success" -> paymentCommandService.completeFds(transaction.getId(), response.externalId());
             case "failed" -> paymentCommandService.failFds(transaction.getId(), response.externalId());
@@ -126,6 +135,7 @@ public class InquiryService {
     }
 
     private void handleCaptureInquiry(PaymentTransaction transaction, CaptureInquiryResponse response) {
+        recoveryCounter.incrementInquiryResult("capture", response.status());
         switch (response.status()) {
             case "success" -> paymentCommandService.completeCapture(transaction.getId(), response.externalId(), LedgerSourceType.PAYMENT_TRANSACTION);
             case "failed" -> paymentCommandService.failCapture(transaction.getId(), response.externalId());

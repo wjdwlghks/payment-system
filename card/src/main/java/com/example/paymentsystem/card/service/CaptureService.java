@@ -19,7 +19,7 @@ public class CaptureService {
         );
 
         try {
-            return captureCommandService.capture(authId, request.captureIdempotentKey(), captureHash);
+            return captureCommandService.capture(authId, request.captureIdempotentKey(), captureHash, request.cardRequestRef());
         } catch (OptimisticLockingFailureException e) {
             return captureCommandService.handleConflict(authId, request.captureIdempotentKey(), captureHash);
         }

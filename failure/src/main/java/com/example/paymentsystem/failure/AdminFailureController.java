@@ -19,7 +19,8 @@ public class AdminFailureController {
         FailureRule rule = new FailureRule(
                 body.failure(),
                 body.delayMs(),
-                body.remaining() != null ? body.remaining() : 1
+                body.remaining() != null ? body.remaining() : 1,
+                body.triggerProbability()
         );
         registry.register(body.endpoint(), rule);
         return ResponseEntity.noContent().build();
@@ -33,7 +34,8 @@ public class AdminFailureController {
                         e -> new RuleView(
                                 e.getValue().getFailure(),
                                 e.getValue().getDelayMs(),
-                                e.getValue().remainingSnapshot()
+                                e.getValue().remainingSnapshot(),
+                                e.getValue().getTriggerProbability()
                         )
                 ));
     }
@@ -48,12 +50,14 @@ public class AdminFailureController {
             String endpoint,        // alias: "auth", "capture", "fds_check"
             FailureType failure,
             Long delayMs,           // nullable → enum 기본값
-            Integer remaining       // nullable → 1
+            Integer remaining,      // nullable → 1
+            Double triggerProbability  // nullable → 1.0 (always trigger)
     ) {}
 
     public record RuleView(
             FailureType failure,
             long delayMs,
-            int remaining
+            int remaining,
+            double triggerProbability
     ) {}
 }

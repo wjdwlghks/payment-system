@@ -1,5 +1,6 @@
 package com.example.paymentsystem.payment.config;
 
+import com.example.paymentsystem.payment.component.RecoveryCounter;
 import io.github.resilience4j.core.IntervalFunction;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
@@ -42,23 +43,31 @@ public class ResilienceConfig {
     }
 
     @Bean
-    public Retry cardAuthRetry(RetryRegistry registry) {
-        return registry.retry("cardAuth");
+    public Retry cardAuthRetry(RetryRegistry registry, RecoveryCounter counter) {
+        return withListeners(registry.retry("cardAuth"), "cardAuth", counter);
     }
 
     @Bean
-    public Retry cardCaptureRetry(RetryRegistry registry) {
-        return registry.retry("cardCapture");
+    public Retry cardCaptureRetry(RetryRegistry registry, RecoveryCounter counter) {
+        return withListeners(registry.retry("cardCapture"), "cardCapture", counter);
     }
 
     @Bean
-    public Retry cardRefundRetry(RetryRegistry registry) {
-        return registry.retry("cardRefund");
+    public Retry cardRefundRetry(RetryRegistry registry, RecoveryCounter counter) {
+        return withListeners(registry.retry("cardRefund"), "cardRefund", counter);
     }
 
     @Bean
-    public Retry fdsCheckRetry(RetryRegistry registry) {
-        return registry.retry("fdsCheck");
+    public Retry fdsCheckRetry(RetryRegistry registry, RecoveryCounter counter) {
+        return withListeners(registry.retry("fdsCheck"), "fdsCheck", counter);
+    }
+
+    private Retry withListeners(Retry retry, String name, RecoveryCounter counter) {
+        retry.getEventPublisher()
+                .onRetry(e -> counter.incrementRetryAttempt(name))
+                .onSuccess(e -> { if (e.getNumberOfRetryAttempts() > 0) counter.incrementRetrySucceeded(name); })
+                .onError(e -> { if (e.getNumberOfRetryAttempts() > 0) counter.incrementRetryFailed(name); });
+        return retry;
     }
 
     private boolean isCausedBy(Throwable throwable, Class<? extends Throwable> causeType) {

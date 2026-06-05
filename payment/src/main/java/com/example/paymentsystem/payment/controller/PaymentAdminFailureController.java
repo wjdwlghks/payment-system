@@ -27,7 +27,8 @@ public class PaymentAdminFailureController {
         FailureRule rule = new FailureRule(
                 body.failure(),
                 body.delayMs(),
-                body.remaining() != null ? body.remaining() : 1
+                body.remaining() != null ? body.remaining() : 1,
+                body.triggerProbability()
         );
         registry.register(body.endpoint(), rule);
         return ResponseEntity.noContent().build();
@@ -41,7 +42,8 @@ public class PaymentAdminFailureController {
                         e -> new RuleView(
                                 e.getValue().getFailure(),
                                 e.getValue().getDelayMs(),
-                                e.getValue().remainingSnapshot()
+                                e.getValue().remainingSnapshot(),
+                                e.getValue().getTriggerProbability()
                         )
                 ));
     }
@@ -56,14 +58,16 @@ public class PaymentAdminFailureController {
             String endpoint,
             FailureType failure,
             Long delayMs,
-            Integer remaining
+            Integer remaining,
+            Double triggerProbability  // nullable → 1.0 (always trigger)
     ) {
     }
 
     public record RuleView(
             FailureType failure,
             long delayMs,
-            int remaining
+            int remaining,
+            double triggerProbability
     ) {
     }
 }

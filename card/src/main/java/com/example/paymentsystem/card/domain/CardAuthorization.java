@@ -59,6 +59,9 @@ public class CardAuthorization {
     @Column(name = "authorized_at", nullable = false)
     private Instant authorizedAt;
 
+    @Column(name = "capture_card_request_ref", length = 100)
+    private String captureCardRequestRef;
+
     @Column(name = "captured_at")
     private Instant capturedAt;
 
@@ -84,10 +87,11 @@ public class CardAuthorization {
         this.updatedAt = Instant.now();
     }
 
-    public void capture(String captureId, String captureIdempotentKey, String captureHash, Instant capturedAt) {
+    public void capture(String captureId, String captureIdempotentKey, String captureHash, String captureCardRequestRef, Instant capturedAt) {
         this.captureId = captureId;
         this.captureIdempotentKey = captureIdempotentKey;
         this.captureHash = captureHash;
+        this.captureCardRequestRef = captureCardRequestRef;
         this.captureStatus = CardCaptureStatus.SUCCESS;
         this.capturedAt = capturedAt;
     }

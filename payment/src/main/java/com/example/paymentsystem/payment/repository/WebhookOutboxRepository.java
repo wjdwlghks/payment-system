@@ -12,7 +12,7 @@ import java.util.List;
 
 public interface WebhookOutboxRepository extends JpaRepository<WebhookOutbox, Long> {
 
-    List<WebhookOutbox> findTop3ByStatusAndNextAttemptAtLessThanEqualOrderByIdAsc(
+    List<WebhookOutbox> findTop30ByStatusAndNextAttemptAtLessThanEqualOrderByIdAsc(
             WebhookOutboxStatus status,
             Instant nextAttemptAt
     );
@@ -20,4 +20,6 @@ public interface WebhookOutboxRepository extends JpaRepository<WebhookOutbox, Lo
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select w from WebhookOutbox w where w.id = :id")
     WebhookOutbox findByIdForUpdate(Long id);
+
+    long countByStatus(WebhookOutboxStatus status);
 }

@@ -20,9 +20,9 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             TransactionStatus status
     );
 
-    List<PaymentTransaction> findTop3ByStatusOrderByUpdatedAtAsc(TransactionStatus status);
+    List<PaymentTransaction> findTop30ByStatusOrderByUpdatedAtAsc(TransactionStatus status);
 
-    List<PaymentTransaction> findTop3ByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
+    List<PaymentTransaction> findTop30ByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
             TransactionStatus status,
             Instant updatedAtBefore
     );
@@ -133,4 +133,34 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             @Param("rangeStart") Instant rangeStart,
             @Param("rangeEnd") Instant rangeEnd
     );
+
+    long countByStatus(TransactionStatus status);
+
+    long countByStatusAndUpdatedAtBefore(TransactionStatus status, Instant updatedAtBefore);
+
+    @Query("SELECT t.idempotentKey FROM PaymentTransaction t WHERE t.type = :type AND t.status = :status")
+    List<String> findIdempotentKeysByTypeAndStatus(
+            @Param("type") TransactionType type,
+            @Param("status") TransactionStatus status
+    );
+
+    @Query("""
+    SELECT COUNT(pi) FROM PaymentIntent pi
+    WHERE pi.status = com.example.paymentsystem.payment.domain.PaymentIntentStatus.DONE
+    AND NOT EXISTS (
+        SELECT pt FROM PaymentTransaction pt
+        WHERE pt.paymentIntent = pi
+          AND pt.type = com.example.paymentsystem.payment.domain.TransactionType.CAPTURE
+          AND pt.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
+    )
+    """)
+    long countDoneWithoutCaptureSucceeded();
+
+    @Query("""
+    SELECT COUNT(pt) FROM PaymentTransaction pt
+    WHERE pt.type = com.example.paymentsystem.payment.domain.TransactionType.CAPTURE
+      AND pt.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
+      AND pt.paymentIntent.status <> com.example.paymentsystem.payment.domain.PaymentIntentStatus.DONE
+    """)
+    long countCaptureSucceededWithoutDone();
 }

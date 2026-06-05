@@ -12,8 +12,10 @@ import java.util.Optional;
 public interface IdempotencyKeyRepository extends JpaRepository<IdempotencyKey, Long> {
     Optional<IdempotencyKey> findByIdempotentKeyAndOperation(String idempotentKey, IdempotencyOperation operation);
 
-    List<IdempotencyKey> findTop3ByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
+    List<IdempotencyKey> findTop30ByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
             IdempotentStatus status,
             Instant updatedAtBefore
     );
+
+    long countByStatus(IdempotentStatus status);
 }
