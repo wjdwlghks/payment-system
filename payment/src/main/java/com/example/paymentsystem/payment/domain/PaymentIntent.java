@@ -92,6 +92,9 @@ public class PaymentIntent {
     }
 
     public void markFdsRequested() {
+        if (this.status != PaymentIntentStatus.AUTH_READY) {
+            throw new IllegalStateException("Cannot start FDS: intent status is " + this.status);
+        }
         this.status = PaymentIntentStatus.FDS_REQUESTED;
     }
 

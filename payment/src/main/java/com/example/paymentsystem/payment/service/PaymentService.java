@@ -10,6 +10,7 @@ import com.example.paymentsystem.payment.domain.IdempotencyKey;
 import com.example.paymentsystem.payment.domain.IdempotencyOperation;
 import com.example.paymentsystem.payment.domain.IdempotentStatus;
 import com.example.paymentsystem.payment.domain.PaymentIntent;
+import com.example.paymentsystem.payment.domain.PaymentIntentStatus;
 import com.example.paymentsystem.payment.dto.*;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.codec.digest.DigestUtils;
@@ -82,6 +83,11 @@ public class PaymentService {
     public PaymentApiResult confirmPayment(String paymentKey) {
 
         PaymentIntent paymentIntent = paymentCommandService.getPaymentIntent(paymentKey);
+
+        if (paymentIntent.getStatus() != PaymentIntentStatus.AUTH_READY) {
+            return errorResult(422, "Payment not confirmable: status is " + paymentIntent.getStatus());
+        }
+
         String idempotentKey = paymentIntent.getMerchantId() + ":" + paymentKey;
         String requestHash = DigestUtils.sha256Hex(idempotentKey);
 

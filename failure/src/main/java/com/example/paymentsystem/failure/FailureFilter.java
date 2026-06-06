@@ -24,7 +24,7 @@ public class FailureFilter implements Filter {
 
         FailureRule rule = registry.consumeForRequest(httpReq);
 
-        if (rule == null || !rule.shouldTrigger()) {
+        if (rule == null) {
             chain.doFilter(req, res);
             return;
         }

@@ -25,7 +25,7 @@ public class FailureSimulationInterceptor implements ClientHttpRequestIntercepto
 
         FailureRule rule = failureRegistry.consumeForClientRequest(request);
 
-        if (rule != null && rule.getFailure() == FailureType.CONNECT_FAILURE && rule.shouldTrigger()) {
+        if (rule != null && rule.getFailure() == FailureType.CONNECT_FAILURE) {
             sleep(rule.getDelayMs());
             throw new ConnectTimeoutException("Simulated connect timeout");
         }

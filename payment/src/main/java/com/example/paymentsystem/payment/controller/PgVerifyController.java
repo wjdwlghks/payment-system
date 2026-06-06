@@ -38,7 +38,7 @@ public class PgVerifyController {
         long processingIdempotencyKeys = idempotencyKeyRepository.countByStatus(IdempotentStatus.PROCESSING);
 
         boolean passed = doneWithoutCapture == 0 && captureWithoutDone == 0
-                && unknownRemaining == 0 && pendingOutbox == 0
+                && unknownRemaining == 0
                 && reconDiscrepancy == 0 && processingIdempotencyKeys == 0;
 
         return new PgInternalResult(

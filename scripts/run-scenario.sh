@@ -2,16 +2,21 @@
 # run-scenario.sh  <failure_location> <failure_type> <trigger_probability> [vus] [duration]
 #
 # failure_location : auth | fds | capture | all | none
-# failure_type     : CONNECT_FAILURE | TIMEOUT_BEFORE_PROCESS | TIMEOUT_AFTER_PROCESS | ERROR_500
-# trigger_probability : 0.0–1.0
-# vus              : virtual users (default 10)
-# duration         : k6 duration string (default 30s)
+# failure_type     : CONNECT_FAILURE | TIMEOUT_BEFORE_PROCESS | TIMEOUT_AFTER_PROCESS | ERROR_500 | all | none
+# trigger_probability : 0.0–1.0  (각 장애 유형별 독립 확률)
+# vus              : virtual users (default 5)
+# duration         : k6 duration string (default 2m)
 #
-# CONNECT_FAILURE  → payment 서버 (FailureSimulationInterceptor)
-#   aliases: card_auth / card_capture / fds_check
-# 나머지           → card/fds 서버 (FailureFilter)
-#   card aliases : auth / capture
-#   fds  aliases : fds_check
+# failure_type=all 등록 위치:
+#   auth    : CONNECT_FAILURE → payment(card_auth)
+#             TIMEOUT_BEFORE/AFTER, ERROR_500 → card(auth)
+#   fds     : TIMEOUT_BEFORE/AFTER, ERROR_500 → fds(fds_check)  ※ CONNECT_FAILURE 제외
+#   capture : CONNECT_FAILURE → payment(card_capture)
+#             TIMEOUT_BEFORE/AFTER, ERROR_500 → card(capture)
+#
+# 단일 failure_type 등록 위치:
+#   CONNECT_FAILURE          → payment 서버 (FailureSimulationInterceptor)
+#   TIMEOUT_*/ERROR_500      → card/fds 서버 (FailureFilter)
 
 set -euo pipefail
 
@@ -19,7 +24,7 @@ FAILURE_LOCATION=${1:-none}
 FAILURE_TYPE=${2:-none}
 TRIGGER_PROBABILITY=${3:-0.3}
 VUS=${4:-10}
-DURATION=${5:-30s}
+DURATION=${5:-2m}
 
 PAYMENT_URL="http://localhost:8082"
 MERCHANT_URL="http://localhost:8081"
@@ -29,7 +34,7 @@ RESULTS_DIR="$(dirname "$0")/../results"
 REMAINING=99999
 
 mkdir -p "$RESULTS_DIR"
-RESULT_FILE="$RESULTS_DIR/$(date +%Y%m%d_%H%M%S)_${FAILURE_LOCATION}_${FAILURE_TYPE}_p${TRIGGER_PROBABILITY}.json"
+RESULT_FILE="$RESULTS_DIR/$(date +%Y%m%d_%H%M%S)_${FAILURE_LOCATION}_${FAILURE_TYPE}_p${TRIGGER_PROBABILITY}_d${DURATION}.json"
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 
@@ -56,40 +61,73 @@ curl -sf -X POST   "$PAYMENT_URL/admin/metrics/recovery/reset"
 log "=== 3. Register failure rules: location=$FAILURE_LOCATION type=$FAILURE_TYPE prob=$TRIGGER_PROBABILITY ==="
 
 register_payment() {
-  local ALIAS=$1
+  local ALIAS=$1 TYPE=$2
   curl -sf -X POST "$PAYMENT_URL/admin/failure" \
     -H 'Content-Type: application/json' \
-    -d "{\"endpoint\":\"$ALIAS\",\"failure\":\"$FAILURE_TYPE\",\"remaining\":$REMAINING,\"triggerProbability\":$TRIGGER_PROBABILITY}"
+    -d "{\"endpoint\":\"$ALIAS\",\"failure\":\"$TYPE\",\"remaining\":$REMAINING,\"triggerProbability\":$TRIGGER_PROBABILITY}"
 }
 
 register_card() {
-  local ALIAS=$1
+  local ALIAS=$1 TYPE=$2
   curl -sf -X POST "$CARD_URL/admin/failure" \
     -H 'Content-Type: application/json' \
-    -d "{\"endpoint\":\"$ALIAS\",\"failure\":\"$FAILURE_TYPE\",\"remaining\":$REMAINING,\"triggerProbability\":$TRIGGER_PROBABILITY}"
+    -d "{\"endpoint\":\"$ALIAS\",\"failure\":\"$TYPE\",\"remaining\":$REMAINING,\"triggerProbability\":$TRIGGER_PROBABILITY}"
 }
 
 register_fds() {
-  local ALIAS=$1
+  local ALIAS=$1 TYPE=$2
   curl -sf -X POST "$FDS_URL/admin/failure" \
     -H 'Content-Type: application/json' \
-    -d "{\"endpoint\":\"$ALIAS\",\"failure\":\"$FAILURE_TYPE\",\"remaining\":$REMAINING,\"triggerProbability\":$TRIGGER_PROBABILITY}"
+    -d "{\"endpoint\":\"$ALIAS\",\"failure\":\"$TYPE\",\"remaining\":$REMAINING,\"triggerProbability\":$TRIGGER_PROBABILITY}"
 }
 
-if [[ "$FAILURE_TYPE" == "CONNECT_FAILURE" ]]; then
+register_auth_all() {
+  register_payment card_auth CONNECT_FAILURE
+  register_card    auth      TIMEOUT_BEFORE_PROCESS
+  register_card    auth      TIMEOUT_AFTER_PROCESS
+  register_card    auth      ERROR_500
+}
+
+register_fds_all() {
+  # CONNECT_FAILURE 제외 — inquiry 메커니즘 검증엔 불필요
+  register_fds fds_check TIMEOUT_BEFORE_PROCESS
+  register_fds fds_check TIMEOUT_AFTER_PROCESS
+  register_fds fds_check ERROR_500
+}
+
+register_capture_all() {
+  register_payment card_capture CONNECT_FAILURE
+  register_card    capture      TIMEOUT_BEFORE_PROCESS
+  register_card    capture      TIMEOUT_AFTER_PROCESS
+  register_card    capture      ERROR_500
+}
+
+if [[ "$FAILURE_TYPE" == "all" ]]; then
   case "$FAILURE_LOCATION" in
-    auth)    register_payment card_auth ;;
-    fds)     register_payment fds_check ;;
-    capture) register_payment card_capture ;;
-    all)     register_payment card_auth; register_payment fds_check; register_payment card_capture ;;
+    auth)    register_auth_all ;;
+    fds)     register_fds_all ;;
+    capture) register_capture_all ;;
+    all)     register_auth_all; register_fds_all; register_capture_all ;;
     none)    ;;
   esac
-else
+elif [[ "$FAILURE_TYPE" == "CONNECT_FAILURE" ]]; then
   case "$FAILURE_LOCATION" in
-    auth)    register_card auth ;;
-    fds)     register_fds  fds_check ;;
-    capture) register_card capture ;;
-    all)     register_card auth; register_fds fds_check; register_card capture ;;
+    auth)    register_payment card_auth    CONNECT_FAILURE ;;
+    fds)     register_payment fds_check   CONNECT_FAILURE ;;
+    capture) register_payment card_capture CONNECT_FAILURE ;;
+    all)     register_payment card_auth CONNECT_FAILURE
+             register_payment fds_check CONNECT_FAILURE
+             register_payment card_capture CONNECT_FAILURE ;;
+    none)    ;;
+  esac
+elif [[ "$FAILURE_TYPE" != "none" ]]; then
+  case "$FAILURE_LOCATION" in
+    auth)    register_card auth      "$FAILURE_TYPE" ;;
+    fds)     register_fds  fds_check "$FAILURE_TYPE" ;;
+    capture) register_card capture   "$FAILURE_TYPE" ;;
+    all)     register_card auth "$FAILURE_TYPE"
+             register_fds  fds_check "$FAILURE_TYPE"
+             register_card capture "$FAILURE_TYPE" ;;
     none)    ;;
   esac
 fi
@@ -117,7 +155,14 @@ print(json.dumps(d))
 ")
 log "Row lock stats: $ROW_LOCK_STATS"
 
+# ── 4-2. k6 종료 시점 pendingWebhook 스냅샷 ──────────────────────────────────
+PENDING_WEBHOOK_AT_K6_END=$(curl -sf "$PAYMENT_URL/admin/convergence" | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)['pendingWebhook'])")
+log "pendingWebhook at k6 end: $PENDING_WEBHOOK_AT_K6_END"
+
 # ── 5. 수렴 대기 (폴링 + 수동 스케줄러 트리거) ───────────────────────────────
+# pendingWebhook은 수렴 조건 제외 — 비동기 알림이라 일관성 검증과 무관
+# 스케줄러 트리거는 계속 수행해 백그라운드로 드레인
 log "=== 5. Convergence polling ==="
 CONVERGE_TIMEOUT=300   # 최대 5분
 CONVERGE_INTERVAL=5
@@ -125,7 +170,12 @@ elapsed=0
 
 while true; do
   STATUS=$(curl -sf "$PAYMENT_URL/admin/convergence")
-  CONVERGED=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin)['converged'])")
+  CONVERGED=$(echo "$STATUS" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print(d['unknownTx'] == 0 and d['staleRequested'] == 0
+      and d['fdsReady'] == 0 and d['processingIdempotencyKeys'] == 0)
+")
 
   if [[ "$CONVERGED" == "True" ]]; then
     log "Converged: $STATUS"
@@ -225,6 +275,7 @@ result = {
     },
     "recovery":    json.loads('''$RECOVERY'''),
     "row_lock":    json.loads('''$ROW_LOCK_STATS'''),
+    "pending_webhook_at_k6_end": $PENDING_WEBHOOK_AT_K6_END,
     "verify": {
         "A_pg_internal":  json.loads('''$PG_INTERNAL'''),
         "B_auth_diff":    json.loads('''$AUTH_DIFF'''),

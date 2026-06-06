@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -35,16 +36,18 @@ public class PaymentAdminFailureController {
     }
 
     @GetMapping
-    public Map<String, RuleView> list() {
+    public Map<String, List<RuleView>> list() {
         return registry.snapshot().entrySet().stream()
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
-                        e -> new RuleView(
-                                e.getValue().getFailure(),
-                                e.getValue().getDelayMs(),
-                                e.getValue().remainingSnapshot(),
-                                e.getValue().getTriggerProbability()
-                        )
+                        e -> e.getValue().stream()
+                                .map(r -> new RuleView(
+                                        r.getFailure(),
+                                        r.getDelayMs(),
+                                        r.remainingSnapshot(),
+                                        r.getTriggerProbability()
+                                ))
+                                .collect(Collectors.toList())
                 ));
     }
 
