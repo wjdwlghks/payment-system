@@ -71,7 +71,6 @@ public class PaymentCommandService {
         }
         paymentIntent.markAuthReady(authorizedAt);
         transaction.markSucceeded(externalId);
-        webhookService.saveAuthReady(paymentIntent);
         return toResponse(paymentIntent);
     }
 
@@ -182,6 +181,7 @@ public class PaymentCommandService {
         }
         paymentIntent.markFdsReady();
         transaction.markSucceeded(externalId);
+        webhookService.saveReadyForConfirm(paymentIntent);
         return toResponse(paymentIntent);
     }
 
@@ -214,20 +214,6 @@ public class PaymentCommandService {
         webhookService.savePaymentComplete(paymentIntent);
         ledgerService.postCapture(captureTransactionId, sourceType);
         return toResponse(paymentIntent);
-    }
-
-    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
-    @Transactional
-    public CaptureRequestContext completeFdsAndCreateCaptureRequest(
-            Long fdsTransactionId,
-            String externalId
-    ) {
-        PaymentTransaction fdsTransaction = getTransaction(fdsTransactionId);
-        PaymentIntent paymentIntent = fdsTransaction.getPaymentIntent();
-
-        fdsTransaction.markSucceeded(externalId);
-
-        return createCaptureRequest(paymentIntent.getPaymentKey());
     }
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)

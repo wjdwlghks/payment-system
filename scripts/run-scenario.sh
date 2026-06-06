@@ -174,7 +174,7 @@ while true; do
 import sys, json
 d = json.load(sys.stdin)
 print(d['unknownTx'] == 0 and d['staleRequested'] == 0
-      and d['fdsReady'] == 0 and d['processingIdempotencyKeys'] == 0)
+      and d['authReady'] == 0 and d['processingIdempotencyKeys'] == 0)
 ")
 
   if [[ "$CONVERGED" == "True" ]]; then

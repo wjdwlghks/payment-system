@@ -33,20 +33,24 @@ public class ConvergenceController {
         long unknownTx          = txRepository.countByStatus(TransactionStatus.UNKNOWN);
         long staleRequested     = txRepository.countByStatusAndUpdatedAtBefore(
                 TransactionStatus.REQUESTED, Instant.now().minus(STALE_TX_THRESHOLD));
+        // AUTH_READY is the transient recovery state (fds-scheduler continues it to FDS_READY).
+        // FDS_READY is a resting state awaiting merchant confirm — reported but not a blocker.
+        long authReady          = intentRepository.countByStatus(PaymentIntentStatus.AUTH_READY);
         long fdsReady           = intentRepository.countByStatus(PaymentIntentStatus.FDS_READY);
         long pendingWebhook     = outboxRepository.countByStatus(WebhookOutboxStatus.PENDING);
         long processingIdempotencyKeys = idempotencyKeyRepository.countByStatus(IdempotentStatus.PROCESSING);
 
         boolean converged = unknownTx == 0 && staleRequested == 0
-                && fdsReady == 0 && pendingWebhook == 0 && processingIdempotencyKeys == 0;
+                && authReady == 0 && processingIdempotencyKeys == 0;
 
         return new ConvergenceStatus(
-                unknownTx, staleRequested, fdsReady, pendingWebhook, processingIdempotencyKeys, converged);
+                unknownTx, staleRequested, authReady, fdsReady, pendingWebhook, processingIdempotencyKeys, converged);
     }
 
     public record ConvergenceStatus(
             long unknownTx,
             long staleRequested,
+            long authReady,
             long fdsReady,
             long pendingWebhook,
             long processingIdempotencyKeys,

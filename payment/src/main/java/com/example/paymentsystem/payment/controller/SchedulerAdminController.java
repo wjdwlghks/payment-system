@@ -1,6 +1,6 @@
 package com.example.paymentsystem.payment.controller;
 
-import com.example.paymentsystem.payment.component.CaptureScheduler;
+import com.example.paymentsystem.payment.component.FdsScheduler;
 import com.example.paymentsystem.payment.component.InquiryScheduler;
 import com.example.paymentsystem.payment.component.WebhookScheduler;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SchedulerAdminController {
 
     private final InquiryScheduler inquiryScheduler;
-    private final CaptureScheduler captureScheduler;
+    private final FdsScheduler fdsScheduler;
     private final WebhookScheduler webhookScheduler;
 
     @PostMapping("/run-now")
@@ -22,7 +22,7 @@ public class SchedulerAdminController {
         inquiryScheduler.inquiryUnknownPayment();
         inquiryScheduler.inquiryStaleRequested();
         inquiryScheduler.recoverStaleIdempotencyKeys();
-        captureScheduler.captureFdsReadyPayment();
+        fdsScheduler.checkAuthReadyPayment();
         webhookScheduler.webhook();
     }
 }

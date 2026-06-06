@@ -53,14 +53,6 @@ public class CardClient {
         return Retry.decorateSupplier(cardRefundRetry, supplier).get();
     }
 
-    public CardCaptureResponse captureWithoutRetry(String authorizationId, CardCaptureRequest request) {
-        return cardRestClient.post()
-                .uri("/v1/authorizations/{authorizationId}/capture", authorizationId)
-                .body(request)
-                .retrieve()
-                .body(CardCaptureResponse.class);
-    }
-
     public AuthInquiryResponse inquiryAuth(String authIdempotentKey) {
         return cardRestClient.get()
                 .uri("/v1/authorizations/inquiries/{authIdempotentKey}", authIdempotentKey)

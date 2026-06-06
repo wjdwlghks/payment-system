@@ -27,7 +27,7 @@ public class WebhookService {
     private static final String STAGE_AUTH = "AUTH";
     private static final String STAGE_FDS = "FDS";
     private static final String STAGE_CAPTURE = "CAPTURE";
-    private static final String WEBHOOK_AUTH_READY = "auth_ready";
+    private static final String WEBHOOK_READY_FOR_CONFIRM = "ready";
     private static final String WEBHOOK_DONE = "done";
     private static final String WEBHOOK_FAILED = "failed";
     private static final String WEBHOOK_REFUND_SUCCEEDED = "succeeded";
@@ -38,8 +38,8 @@ public class WebhookService {
     private final WebhookOutboxRepository repository;
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public void saveAuthReady(PaymentIntent paymentIntent) {
-        save(paymentIntent, WEBHOOK_AUTH_READY,null);
+    public void saveReadyForConfirm(PaymentIntent paymentIntent) {
+        save(paymentIntent, WEBHOOK_READY_FOR_CONFIRM,null);
     }
 
     @Transactional(propagation = Propagation.MANDATORY)

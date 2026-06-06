@@ -84,7 +84,7 @@ public class PaymentService {
 
         PaymentIntent paymentIntent = paymentCommandService.getPaymentIntent(paymentKey);
 
-        if (paymentIntent.getStatus() != PaymentIntentStatus.AUTH_READY) {
+        if (paymentIntent.getStatus() != PaymentIntentStatus.FDS_READY) {
             return errorResult(422, "Payment not confirmable: status is " + paymentIntent.getStatus());
         }
 
@@ -107,7 +107,29 @@ public class PaymentService {
             return new PaymentApiResult(e.getResponseCode(), e.getResponseBody());
         }
 
+        CaptureRequestContext captureContext = paymentCommandService.createCaptureRequest(paymentKey);
+        PaymentResponse paymentResponse = captureExecutionService.captureWithRetry(captureContext);
+        return completeRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, paymentResponse);
+    }
 
+    private PaymentApiResult handleAuthResponse(
+            String idempotentKey,
+            AuthRequestContext context,
+            CardAuthResponse response
+    ) {
+        if (!response.success()) {
+            return completeRequest(
+                    idempotentKey,
+                    IdempotencyOperation.PAYMENT_REQUEST,
+                    paymentCommandService.failAuth(context.transactionId(), response.externalId())
+            );
+        }
+
+        paymentCommandService.completeAuth(context.transactionId(), response.externalId(), response.authorizedAt());
+        return runFdsCheck(idempotentKey, context.paymentKey());
+    }
+
+    private PaymentApiResult runFdsCheck(String idempotentKey, String paymentKey) {
         FdsRequestContext fdsContext = paymentCommandService.createFdsRequest(paymentKey);
 
         FdsCheckRequest checkRequest = new FdsCheckRequest(
@@ -123,27 +145,15 @@ public class PaymentService {
                 response -> handleFdsResponse(idempotentKey, fdsContext, response),
                 () -> completeRequest(
                         idempotentKey,
-                        IdempotencyOperation.PAYMENT_CONFIRM,
+                        IdempotencyOperation.PAYMENT_REQUEST,
                         paymentCommandService.unknownFds(fdsContext.transactionId())
                 ),
                 () -> completeRequest(
                         idempotentKey,
-                        IdempotencyOperation.PAYMENT_CONFIRM,
+                        IdempotencyOperation.PAYMENT_REQUEST,
                         paymentCommandService.failFds(fdsContext.transactionId(), null)
                 )
         );
-    }
-
-    private PaymentApiResult handleAuthResponse(
-            String idempotentKey,
-            AuthRequestContext context,
-            CardAuthResponse response
-    ) {
-        PaymentResponse paymentResponse = response.success()
-                ? paymentCommandService.completeAuth(context.transactionId(), response.externalId(), response.authorizedAt())
-                : paymentCommandService.failAuth(context.transactionId(), response.externalId());
-
-        return completeRequest(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, paymentResponse);
     }
 
     private PaymentApiResult handleFdsResponse(
@@ -151,20 +161,11 @@ public class PaymentService {
             FdsRequestContext context,
             FdsCheckResponse response
     ) {
-        if (!response.success()) {
-            return completeRequest(
-                    idempotentKey,
-                    IdempotencyOperation.PAYMENT_CONFIRM,
-                    paymentCommandService.failFds(context.transactionId(), response.externalId())
-            );
-        }
+        PaymentResponse paymentResponse = response.success()
+                ? paymentCommandService.completeFds(context.transactionId(), response.externalId())
+                : paymentCommandService.failFds(context.transactionId(), response.externalId());
 
-        CaptureRequestContext captureContext = paymentCommandService.completeFdsAndCreateCaptureRequest(
-                context.transactionId(),
-                response.externalId()
-        );
-        PaymentResponse paymentResponse = captureExecutionService.captureWithRetry(captureContext);
-        return completeRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, paymentResponse);
+        return completeRequest(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, paymentResponse);
     }
 
     private PaymentApiResult completeRequest(

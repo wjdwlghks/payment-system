@@ -107,6 +107,9 @@ public class PaymentIntent {
     }
 
     public void markCaptureRequested() {
+        if (this.status != PaymentIntentStatus.FDS_READY) {
+            throw new IllegalStateException("Cannot start capture: intent status is " + this.status);
+        }
         this.status = PaymentIntentStatus.CAPTURE_REQUESTED;
     }
 
