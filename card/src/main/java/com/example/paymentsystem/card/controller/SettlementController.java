@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/admin/settlements")
@@ -40,7 +41,7 @@ public class SettlementController {
 
     @PostMapping("/generate")
     public ResponseEntity<String> generate() {
-        String filename = "settlement-" + FILE_TS.format(Instant.now()) + ".csv";
+        String filename = "settlement-" + FILE_TS.format(Instant.now()) + "-" + UUID.randomUUID().toString().substring(0, 8) + ".csv";
         Path path = Path.of(outputDir, filename);
 
         try {

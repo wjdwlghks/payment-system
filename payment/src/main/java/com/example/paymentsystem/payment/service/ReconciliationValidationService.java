@@ -2,6 +2,7 @@ package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.Account;
 import com.example.paymentsystem.payment.domain.AccountType;
+import com.example.paymentsystem.payment.domain.CardCompany;
 import com.example.paymentsystem.payment.domain.ClearingBatch;
 import com.example.paymentsystem.payment.domain.LedgerDirection;
 import com.example.paymentsystem.payment.domain.LedgerEntryType;
@@ -23,7 +24,6 @@ import com.example.paymentsystem.payment.repository.PaymentTransactionRepository
 import com.example.paymentsystem.payment.repository.ReconBatchRepository;
 import com.example.paymentsystem.payment.repository.ReconciliationResultRepository;
 import com.example.paymentsystem.payment.repository.StagingSettlementRepository;
-import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -61,7 +61,6 @@ public class ReconciliationValidationService {
     private final ClearingService clearingService;
     private final ChunkProcessor chunkProcessor;
     private final UnknownReconciler unknownReconciler;
-    private final EntityManager entityManager;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public ValidateReconciliationResponse validate(Long batchId) {
@@ -72,6 +71,8 @@ public class ReconciliationValidationService {
                     "batch must be INGESTED to validate, was: " + batch.getStatus()
             );
         }
+
+        CardCompany cardCompany = CardCompany.valueOf(batch.getCardCompany());
 
         Instant rangeStart = batch.getBusinessDate().atStartOfDay(KST).toInstant();
         Instant rangeEnd = batch.getBusinessDate().plusDays(1).atStartOfDay(KST).toInstant();
@@ -91,13 +92,10 @@ public class ReconciliationValidationService {
 
         List<StagingSettlement> stagings = stagingSettlementRepository.findByReconBatch_Id(batchId);
 
-        int autoResolvedCount = reconcileUnknowns(rangeStart, rangeEnd, stagings);
-
-        entityManager.refresh(cardReceivable);
-        long postResolveBalance = cardReceivable.getBalance();
+        int autoResolvedCount = reconcileUnknowns(rangeStart, rangeEnd, stagings, cardCompany);
 
         List<PaymentTransaction> txs = paymentTransactionRepository.findForReconciliation(
-                RECON_TYPES, RECON_STATUSES, rangeStart, rangeEnd
+                RECON_TYPES, RECON_STATUSES, rangeStart, rangeEnd, cardCompany
         );
 
         Map<String, StagingSettlement> stagingByCardRequestRef = new HashMap<>();
@@ -161,8 +159,12 @@ public class ReconciliationValidationService {
         }
 
         long fileNet = computeFileNet(stagings);
-        if (postResolveBalance != fileNet) {
-            results.add(ReconciliationResult.aggregate(batch, postResolveBalance, fileNet));
+        long cardCompanyNet = txs.stream()
+                .filter(t -> t.getStatus() == TransactionStatus.SUCCEEDED)
+                .mapToLong(t -> t.getType() == TransactionType.CAPTURE ? t.getAmount() : -t.getAmount())
+                .sum();
+        if (cardCompanyNet != fileNet) {
+            results.add(ReconciliationResult.aggregate(batch, cardCompanyNet, fileNet));
             counts.aggregate++;
         }
 
@@ -197,10 +199,11 @@ public class ReconciliationValidationService {
     private int reconcileUnknowns(
             Instant rangeStart,
             Instant rangeEnd,
-            List<StagingSettlement> stagings
+            List<StagingSettlement> stagings,
+            CardCompany cardCompany
     ) {
         List<PaymentTransaction> unknownTxs = paymentTransactionRepository.findForReconciliation(
-                RECON_TYPES, UNKNOWN_STATUS, rangeStart, rangeEnd
+                RECON_TYPES, UNKNOWN_STATUS, rangeStart, rangeEnd, cardCompany
         );
         if (unknownTxs.isEmpty()) {
             return 0;
