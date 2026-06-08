@@ -15,12 +15,20 @@ const confirmFailedHttp  = new Counter('confirm_failed_http');
 const confirmFailedOther = new Counter('confirm_failed_other');
 
 // ── 실행 설정 ────────────────────────────────────────────────
+const VUS      = parseInt(__ENV.VUS)      || 5;
+const WARMUP   = __ENV.WARMUP             || '30s';
+const DURATION = __ENV.DURATION           || '2m';
+const WARMDOWN = __ENV.WARMDOWN           || '30s';
+
 export const options = {
   scenarios: {
-    stage1: {
-      executor: 'constant-vus',
-      vus:      parseInt(__ENV.VUS)  || 5,
-      duration: __ENV.DURATION       || '2m',
+    load: {
+      executor: 'ramping-vus',
+      stages: [
+        { duration: WARMUP,   target: VUS }, // warm-up: 0 → VUS
+        { duration: DURATION, target: VUS }, // steady state
+        { duration: WARMDOWN, target: 0   }, // warm-down: VUS → 0
+      ],
     },
   },
   thresholds: {

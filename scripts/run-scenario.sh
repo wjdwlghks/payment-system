@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# run-scenario.sh  <failure_location> <failure_type> <trigger_probability> [vus] [duration]
+# run-scenario.sh  <failure_location> <failure_type> <trigger_probability> [vus] [duration] [warmup] [warmdown]
 #
 # failure_location : auth | fds | capture | all | none
 # failure_type     : CONNECT_FAILURE | TIMEOUT_BEFORE_PROCESS | TIMEOUT_AFTER_PROCESS | ERROR_500 | all | none
 # trigger_probability : 0.0–1.0  (각 장애 유형별 독립 확률)
-# vus              : virtual users (default 5)
-# duration         : k6 duration string (default 2m)
+# vus              : virtual users (default 10)
+# duration         : k6 steady-state duration string (default 2m)
+# warmup           : ramp-up duration (default 30s)
+# warmdown         : ramp-down duration (default 30s)
 #
 # failure_type=all 등록 위치:
 #   auth    : CONNECT_FAILURE → payment(card_auth)
@@ -25,6 +27,8 @@ FAILURE_TYPE=${2:-none}
 TRIGGER_PROBABILITY=${3:-0.3}
 VUS=${4:-10}
 DURATION=${5:-2m}
+WARMUP=${6:-30s}
+WARMDOWN=${7:-30s}
 
 PAYMENT_URL="http://localhost:8082"
 MERCHANT_URL="http://localhost:8081"
@@ -35,7 +39,7 @@ RESULTS_DIR="$(dirname "$0")/../results"
 REMAINING=99999
 
 mkdir -p "$RESULTS_DIR"
-RESULT_FILE="$RESULTS_DIR/$(date +%Y%m%d_%H%M%S)_${FAILURE_LOCATION}_${FAILURE_TYPE}_p${TRIGGER_PROBABILITY}_d${DURATION}.json"
+RESULT_FILE="$RESULTS_DIR/$(date +%Y%m%d_%H%M%S)_${FAILURE_LOCATION}_${FAILURE_TYPE}_p${TRIGGER_PROBABILITY}_v${VUS}_w${WARMUP}_d${DURATION}.json"
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 
@@ -140,6 +144,8 @@ k6 run \
   -e MERCHANT_BASE="$MERCHANT_URL" \
   -e VUS="$VUS" \
   -e DURATION="$DURATION" \
+  -e WARMUP="$WARMUP" \
+  -e WARMDOWN="$WARMDOWN" \
   -e SUMMARY_FILE="$RESULT_FILE.k6.json" \
   "$(dirname "$0")/../k6/scenario.js"
 
@@ -284,7 +290,9 @@ result = {
         "failure_type":        "$FAILURE_TYPE",
         "trigger_probability": $TRIGGER_PROBABILITY,
         "vus":                 $VUS,
+        "warmup":              "$WARMUP",
         "duration":            "$DURATION",
+        "warmdown":            "$WARMDOWN",
     },
     "recovery":    json.loads('''$RECOVERY'''),
     "row_lock":    json.loads('''$ROW_LOCK_STATS'''),

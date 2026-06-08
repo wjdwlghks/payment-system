@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
+import java.util.concurrent.Executors;
 
 @Component
 @Slf4j
@@ -26,27 +27,29 @@ public class WebhookScheduler {
         this.restClient = restClient;
     }
 
-    @Scheduled(fixedDelay = 10_000)
+    @Scheduled(fixedDelay = 3_000)
     public void webhook() {
         List<WebhookOutbox> outboxes = webhookService.getOutboxes();
+        if (outboxes.isEmpty()) return;
 
-        for (WebhookOutbox outbox : outboxes) {
-            try {
-                String request = outbox.getPayload();
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            outboxes.forEach(outbox -> executor.execute(() -> deliver(outbox)));
+        }
+        // executor.close() 호출 시 모든 virtual thread 완료까지 대기
+    }
 
-                restClient.post()
-                        .uri("/webhooks/payment")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body(request)
-                        .retrieve()
+    private void deliver(WebhookOutbox outbox) {
+        try {
+            restClient.post()
+                    .uri("/webhooks/payment")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(outbox.getPayload())
+                    .retrieve()
+                    .toBodilessEntity();
 
-                        .toBodilessEntity();
-
-                webhookService.completeWebhook(outbox.getId());
-
-            } catch (Exception e) {
-                webhookService.retryWebhook(outbox.getId(), e.getMessage());
-            }
+            webhookService.completeWebhook(outbox.getId());
+        } catch (Exception e) {
+            webhookService.retryWebhook(outbox.getId(), e.getMessage());
         }
     }
 }

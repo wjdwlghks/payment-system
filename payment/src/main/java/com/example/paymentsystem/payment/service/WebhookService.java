@@ -132,7 +132,7 @@ public class WebhookService {
 
     @Transactional(readOnly = true)
     public List<WebhookOutbox> getOutboxes() {
-        return repository.findTop150ByStatusAndNextAttemptAtLessThanEqualOrderByIdAsc(
+        return repository.findTop300ByStatusAndNextAttemptAtLessThanEqualOrderByIdAsc(
                 WebhookOutboxStatus.PENDING,
                 Instant.now()
         );
