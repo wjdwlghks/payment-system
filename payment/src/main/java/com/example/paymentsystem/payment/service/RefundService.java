@@ -64,7 +64,7 @@ public class RefundService {
         );
 
         return externalCallExecutor.execute(
-                () -> cardClient.refund(refundContext.captureId(), cardRefundRequest),
+                () -> cardClient.refund(refundContext.cardCompany(), refundContext.captureId(), cardRefundRequest),
                 response -> handleRefundResponse(idempotentKey, refundContext, response),
                 () -> completeRequest(
                         idempotentKey,

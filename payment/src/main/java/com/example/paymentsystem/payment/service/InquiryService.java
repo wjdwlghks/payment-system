@@ -6,6 +6,7 @@ import com.example.paymentsystem.payment.client.card.CaptureInquiryResponse;
 import com.example.paymentsystem.payment.client.fds.FdsClient;
 import com.example.paymentsystem.payment.client.fds.FdsInquiryResponse;
 import com.example.paymentsystem.payment.component.RecoveryCounter;
+import com.example.paymentsystem.payment.domain.CardCompany;
 import com.example.paymentsystem.payment.domain.LedgerSourceType;
 import com.example.paymentsystem.payment.domain.PaymentTransaction;
 import com.example.paymentsystem.payment.domain.Refund;
@@ -39,14 +40,14 @@ public class InquiryService {
     @Transactional(readOnly = true)
     public List<PaymentTransaction> getUnknowns() {
         return paymentTransactionRepository
-                .findTop30ByStatusOrderByUpdatedAtAsc(TransactionStatus.UNKNOWN);
+                .findTop30WithIntentByStatusOrderByUpdatedAtAsc(TransactionStatus.UNKNOWN);
     }
 
     @Transactional(readOnly = true)
     public List<PaymentTransaction> getStaleRequested() {
         Instant threshold = Instant.now().minus(STALE_REQUESTED_THRESHOLD);
         return paymentTransactionRepository
-                .findTop30ByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
+                .findTop30WithIntentByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
                         TransactionStatus.REQUESTED,
                         threshold
                 );
@@ -54,9 +55,10 @@ public class InquiryService {
 
     public void inquiryAuth(PaymentTransaction transaction) {
         recoveryCounter.incrementInquiryTotal("auth");
+        CardCompany company = transaction.getPaymentIntent().getCardCompany();
         String authIdempotentKey = transaction.getIdempotentKey();
         externalCallExecutor.executeVoid(
-                () -> cardClient.inquiryAuth(authIdempotentKey),
+                () -> cardClient.inquiryAuth(company, authIdempotentKey),
                 response -> handleAuthInquiry(transaction, response),
                 () -> {},
                 () -> paymentCommandService.failAuth(transaction.getId(), null)
@@ -76,9 +78,10 @@ public class InquiryService {
 
     public void inquiryCapture(PaymentTransaction transaction) {
         recoveryCounter.incrementInquiryTotal("capture");
+        CardCompany company = transaction.getPaymentIntent().getCardCompany();
         String captureIdempotentKey = transaction.getIdempotentKey();
         externalCallExecutor.executeVoid(
-                () -> cardClient.inquiryCapture(captureIdempotentKey),
+                () -> cardClient.inquiryCapture(company, captureIdempotentKey),
                 response -> handleCaptureInquiry(transaction, response),
                 () -> {},
                 () -> paymentCommandService.failCapture(transaction.getId(), null)
@@ -87,11 +90,12 @@ public class InquiryService {
 
     public void inquiryRefund(PaymentTransaction transaction) {
         recoveryCounter.incrementInquiryTotal("refund");
+        CardCompany company = transaction.getPaymentIntent().getCardCompany();
         Refund refund = refundRepository.findByTransactionId(transaction.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Refund not found for transaction: " + transaction.getId()));
         String refundKey = refund.getRefundKey();
         externalCallExecutor.executeVoid(
-                () -> cardClient.inquiryRefund(refundKey),
+                () -> cardClient.inquiryRefund(company, refundKey),
                 response -> handleRefundInquiry(transaction, refund, response),
                 () -> {},
                 () -> refundCommandService.failRefund(transaction.getId(), refundKey, null)

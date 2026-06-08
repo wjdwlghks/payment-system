@@ -78,7 +78,8 @@ public class RefundCommandService {
                 request.refundKey(),
                 paymentIntent.getCaptureId(),
                 request.amount(),
-                refundTx.getCardRequestRef()
+                refundTx.getCardRequestRef(),
+                paymentIntent.getCardCompany()
         );
     }
 

@@ -34,7 +34,8 @@ public class PaymentCommandService {
                 UUID.randomUUID().toString(),
                 request.orderId(),
                 request.merchantId(),
-                request.amount()
+                request.amount(),
+                request.cardCompany()
         );
         paymentIntentRepository.save(paymentIntent);
 
@@ -248,7 +249,8 @@ public class PaymentCommandService {
                 paymentIntent.getOrderId(),
                 paymentIntent.getAmount(),
                 captureIdempotentKey,
-                captureTransaction.getCardRequestRef()
+                captureTransaction.getCardRequestRef(),
+                paymentIntent.getCardCompany()
         );
     }
 

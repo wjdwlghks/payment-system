@@ -27,6 +27,15 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             Instant updatedAtBefore
     );
 
+    @Query("SELECT t FROM PaymentTransaction t JOIN FETCH t.paymentIntent WHERE t.status = :status ORDER BY t.updatedAt ASC LIMIT 30")
+    List<PaymentTransaction> findTop30WithIntentByStatusOrderByUpdatedAtAsc(@Param("status") TransactionStatus status);
+
+    @Query("SELECT t FROM PaymentTransaction t JOIN FETCH t.paymentIntent WHERE t.status = :status AND t.updatedAt < :before ORDER BY t.updatedAt ASC LIMIT 30")
+    List<PaymentTransaction> findTop30WithIntentByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
+            @Param("status") TransactionStatus status,
+            @Param("before") Instant before
+    );
+
     @Query("""
     select t
     from PaymentTransaction t
@@ -121,6 +130,7 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
       and t.status in :statuses
       and t.createdAt >= :rangeStart
       and t.createdAt < :rangeEnd
+      and t.paymentIntent.cardCompany = :cardCompany
       and not exists (
           select 1
           from ClearingBatchItem item
@@ -131,7 +141,8 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             @Param("types") Collection<TransactionType> types,
             @Param("statuses") Collection<TransactionStatus> statuses,
             @Param("rangeStart") Instant rangeStart,
-            @Param("rangeEnd") Instant rangeEnd
+            @Param("rangeEnd") Instant rangeEnd,
+            @Param("cardCompany") CardCompany cardCompany
     );
 
     long countByStatus(TransactionStatus status);

@@ -65,7 +65,7 @@ public class PaymentService {
         );
 
         return externalCallExecutor.execute(
-                () -> cardClient.authorize(authRequest),
+                () -> cardClient.authorize(request.cardCompany(), authRequest),
                 response -> handleAuthResponse(idempotentKey, authContext, response),
                 () -> completeRequest(
                         idempotentKey,

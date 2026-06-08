@@ -1,6 +1,7 @@
 package com.example.paymentsystem.payment.config;
 
 import com.example.paymentsystem.payment.component.FailureSimulationInterceptor;
+import com.example.paymentsystem.payment.domain.CardCompany;
 import lombok.RequiredArgsConstructor;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
@@ -15,6 +16,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.util.EnumMap;
+import java.util.Map;
+
 @Configuration
 @RequiredArgsConstructor
 public class CardClientConfig {
@@ -22,7 +26,17 @@ public class CardClientConfig {
     private final FailureSimulationInterceptor interceptor;
 
     @Bean
-    public RestClient cardRestClient(@Value("${payment.card.base-url}") String cardBaseUrl) {
+    public Map<CardCompany, RestClient> cardRestClients(
+            @Value("${payment.card.card-a-base-url}") String cardABaseUrl,
+            @Value("${payment.card.card-b-base-url}") String cardBBaseUrl
+    ) {
+        Map<CardCompany, RestClient> clients = new EnumMap<>(CardCompany.class);
+        clients.put(CardCompany.CARD_CORP_A, buildRestClient(cardABaseUrl));
+        clients.put(CardCompany.CARD_CORP_B, buildRestClient(cardBBaseUrl));
+        return clients;
+    }
+
+    private RestClient buildRestClient(String baseUrl) {
         PoolingHttpClientConnectionManager connectionManager =
                 PoolingHttpClientConnectionManagerBuilder.create()
                         .setMaxConnTotal(50)
@@ -41,7 +55,7 @@ public class CardClientConfig {
                 .build();
 
         return RestClient.builder()
-                .baseUrl(cardBaseUrl)
+                .baseUrl(baseUrl)
                 .requestFactory(new HttpComponentsClientHttpRequestFactory(httpClient))
                 .requestInterceptor(interceptor)
                 .build();

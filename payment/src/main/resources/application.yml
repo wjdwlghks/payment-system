@@ -20,7 +20,8 @@ spring:
 
 payment:
   card:
-    base-url: ${CARD_BASE_URL:http://card:8080}
+    card-a-base-url: ${CARD_A_BASE_URL:http://card:8080}
+    card-b-base-url: ${CARD_B_BASE_URL:http://card-b:8080}
   fds:
     base-url: ${FDS_BASE_URL:http://fds:8080}
   webhook:

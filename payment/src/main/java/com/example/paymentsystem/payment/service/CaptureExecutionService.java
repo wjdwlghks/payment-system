@@ -25,7 +25,7 @@ public class CaptureExecutionService {
         );
 
         return externalCallExecutor.execute(
-                () -> cardClient.capture(captureContext.authorizationId(), captureRequest),
+                () -> cardClient.capture(captureContext.cardCompany(), captureContext.authorizationId(), captureRequest),
                 response -> response.success()
                         ? paymentCommandService.completeCapture(captureContext.transactionId(), response.externalId(), LedgerSourceType.PAYMENT_TRANSACTION)
                         : paymentCommandService.failCapture(captureContext.transactionId(), response.externalId()),

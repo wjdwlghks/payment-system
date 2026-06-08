@@ -28,7 +28,8 @@ DURATION=${5:-2m}
 
 PAYMENT_URL="http://localhost:8082"
 MERCHANT_URL="http://localhost:8081"
-CARD_URL="http://localhost:8084"
+CARD_URL="http://localhost:8084"    # card-a (장애 주입 대상)
+CARD_B_URL="http://localhost:8085"  # card-b (항상 정상)
 FDS_URL="http://localhost:8083"
 RESULTS_DIR="$(dirname "$0")/../results"
 REMAINING=99999
@@ -54,6 +55,7 @@ log "Services ready."
 log "=== 2. Clear failure rules + reset metrics ==="
 curl -sf -X DELETE "$PAYMENT_URL/admin/failure"
 curl -sf -X DELETE "$CARD_URL/admin/failure"
+curl -sf -X DELETE "$CARD_B_URL/admin/failure"
 curl -sf -X DELETE "$FDS_URL/admin/failure"
 curl -sf -X POST   "$PAYMENT_URL/admin/metrics/recovery/reset"
 
@@ -194,20 +196,31 @@ print(d['unknownTx'] == 0 and d['staleRequested'] == 0
 done
 
 # ── 6. 정산 파일 생성 ────────────────────────────────────────────────────────
-log "=== 6. Generate settlement file ==="
-SETTLEMENT_FILE=$(curl -sf -X POST "$CARD_URL/admin/settlements/generate")
-log "Settlement file: $SETTLEMENT_FILE"
+log "=== 6. Generate settlement files ==="
+SETTLEMENT_FILE_A=$(curl -sf -X POST "$CARD_URL/admin/settlements/generate")
+log "Settlement file A: $SETTLEMENT_FILE_A"
+SETTLEMENT_FILE_B=$(curl -sf -X POST "$CARD_B_URL/admin/settlements/generate")
+log "Settlement file B: $SETTLEMENT_FILE_B"
 
-# ── 7. Ingest + Validate ─────────────────────────────────────────────────────
+# ── 7. Ingest + Validate (card-a → clear, then card-b → clear) ───────────────
 log "=== 7. Ingest & validate ==="
-INGEST=$(curl -sf -X POST "$PAYMENT_URL/admin/reconciliation/ingest" \
+INGEST_A=$(curl -sf -X POST "$PAYMENT_URL/admin/reconciliation/ingest" \
   -H 'Content-Type: application/json' \
-  -d "{\"filePath\":\"/recon-files/$SETTLEMENT_FILE\",\"cardCompany\":\"CARD_CORP\",\"businessDate\":\"$(date +%Y-%m-%d)\"}")
-BATCH_ID=$(echo "$INGEST" | python3 -c "import sys,json; print(json.load(sys.stdin)['reconBatchId'])")
-log "Batch ID: $BATCH_ID"
+  -d "{\"filePath\":\"/recon-files/$SETTLEMENT_FILE_A\",\"cardCompany\":\"CARD_CORP_A\",\"businessDate\":\"$(date +%Y-%m-%d)\"}")
+BATCH_A=$(echo "$INGEST_A" | python3 -c "import sys,json; print(json.load(sys.stdin)['reconBatchId'])")
+log "Batch A: $BATCH_A — $(echo "$INGEST_A" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'rows={d[\"rowCount\"]} amount={d[\"fileTotalAmount\"]}')")"
 
-VALIDATE=$(curl -sf -X POST "$PAYMENT_URL/admin/reconciliation/$BATCH_ID/validate")
-log "Validate: $VALIDATE"
+VALIDATE_A=$(curl -sf -X POST "$PAYMENT_URL/admin/reconciliation/$BATCH_A/validate")
+log "Validate A: $VALIDATE_A"
+
+INGEST_B=$(curl -sf -X POST "$PAYMENT_URL/admin/reconciliation/ingest" \
+  -H 'Content-Type: application/json' \
+  -d "{\"filePath\":\"/recon-files/$SETTLEMENT_FILE_B\",\"cardCompany\":\"CARD_CORP_B\",\"businessDate\":\"$(date +%Y-%m-%d)\"}")
+BATCH_B=$(echo "$INGEST_B" | python3 -c "import sys,json; print(json.load(sys.stdin)['reconBatchId'])")
+log "Batch B: $BATCH_B — $(echo "$INGEST_B" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'rows={d[\"rowCount\"]} amount={d[\"fileTotalAmount\"]}')")"
+
+VALIDATE_B=$(curl -sf -X POST "$PAYMENT_URL/admin/reconciliation/$BATCH_B/validate")
+log "Validate B: $VALIDATE_B"
 
 # ── 8. Recovery metrics ───────────────────────────────────────────────────────
 log "=== 8. Recovery metrics ==="
@@ -282,6 +295,8 @@ result = {
         "B_capture_diff": json.loads('''$CAPTURE_DIFF'''),
         "C_ledger":       json.loads('''$LEDGER'''),
         "D_idempotency":  json.loads('''$IDEMPOTENCY'''),
+        "E_validate_a":   json.loads('''$VALIDATE_A'''),
+        "E_validate_b":   json.loads('''$VALIDATE_B'''),
     },
     "passed": (
         json.loads('''$PG_INTERNAL''')["passed"]
@@ -289,6 +304,8 @@ result = {
         and json.loads('''$CAPTURE_DIFF''')["diff_count"] == 0
         and json.loads('''$LEDGER''')["passed"]
         and json.loads('''$IDEMPOTENCY''')["passed"]
+        and json.loads('''$VALIDATE_A''').get("missingOnCardCount", 1) == 0
+        and json.loads('''$VALIDATE_B''').get("missingOnCardCount", 1) == 0
     ),
     "k6_summary_file": "$RESULT_FILE.k6.json",
 }

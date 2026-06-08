@@ -1,0 +1,2 @@
+ALTER TABLE payment_intent
+    ADD COLUMN card_company VARCHAR(30) NOT NULL DEFAULT 'CARD_CORP_A';

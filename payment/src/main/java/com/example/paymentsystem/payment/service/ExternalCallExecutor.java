@@ -1,5 +1,6 @@
 package com.example.paymentsystem.payment.service;
 
+import com.example.paymentsystem.payment.client.card.ConcurrencyLimitExceededException;
 import java.net.SocketTimeoutException;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -20,6 +21,8 @@ public class ExternalCallExecutor {
     ) {
         try {
             return onResponse.apply(call.get());
+        } catch (ConcurrencyLimitExceededException e) {
+            return onFailure.get();
         } catch (ResourceAccessException | RestClientResponseException e) {
             if (shouldRemainUnknown(e)) {
                 return onUnknown.get();

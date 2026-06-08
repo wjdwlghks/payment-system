@@ -10,8 +10,8 @@ const authFailedHttp   = new Counter('auth_failed_http');   // 5xx
 const authFailedOther  = new Counter('auth_failed_other');  // 4xx 등
 
 const confirmDone        = new Counter('confirm_done');
-const confirmUnknown     = new Counter('confirm_unknown');      // 2xx + UNKNOWN_* 상태
-const confirmFailedHttp  = new Counter('confirm_failed_http'); // 5xx
+const confirmUnknown     = new Counter('confirm_unknown');
+const confirmFailedHttp  = new Counter('confirm_failed_http');
 const confirmFailedOther = new Counter('confirm_failed_other');
 
 // ── 실행 설정 ────────────────────────────────────────────────
@@ -31,44 +31,50 @@ export const options = {
 const MERCHANT_BASE = __ENV.MERCHANT_BASE || 'http://localhost:8081';
 const MERCHANT_ID   = __ENV.MERCHANT_ID   || 'merchant-001';
 
+// VU 홀수 → CARD_CORP_A (장애 주입 대상), 짝수 → CARD_CORP_B (정상)
+function cardCompany() {
+  return (__VU % 2 === 1) ? 'CARD_CORP_A' : 'CARD_CORP_B';
+}
+
 // ── 메인 시나리오 ────────────────────────────────────────────
 export default function () {
+  const company = cardCompany();
   const orderId = `order-${__VU}-${__ITER}-${uuidv4().slice(0, 8)}`;
   const amount  = 10000;
 
   // 1) Auth
   const authRes = http.post(
     `${MERCHANT_BASE}/api/payments`,
-    JSON.stringify({ merchantId: MERCHANT_ID, orderId, amount }),
-    { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'auth' } }
+    JSON.stringify({ merchantId: MERCHANT_ID, orderId, amount, cardCompany: company }),
+    { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'auth', cardCompany: company } }
   );
 
-  if (authRes.status >= 500) { authFailedHttp.add(1);  return; }
-  if (authRes.status >= 400) { authFailedOther.add(1); return; }
+  if (authRes.status >= 500) { authFailedHttp.add(1, { cardCompany: company });  return; }
+  if (authRes.status >= 400) { authFailedOther.add(1, { cardCompany: company }); return; }
 
-  authSucceeded.add(1);
+  authSucceeded.add(1, { cardCompany: company });
   const paymentKey = authRes.json('paymentKey');
   if (!paymentKey) return;
 
-  sleep(0.1); // 카드 입력 시뮬레이션
+  sleep(0.1);
 
-  // 2) Confirm (FDS + Capture)
+  // 2) Confirm (Capture)
   const confirmRes = http.post(
     `${MERCHANT_BASE}/api/payments/${paymentKey}/confirm`,
     null,
-    { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'confirm' } }
+    { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'confirm', cardCompany: company } }
   );
 
-  if (confirmRes.status >= 500) { confirmFailedHttp.add(1);  return; }
-  if (confirmRes.status >= 400) { confirmFailedOther.add(1); return; }
+  if (confirmRes.status >= 500) { confirmFailedHttp.add(1, { cardCompany: company });  return; }
+  if (confirmRes.status >= 400) { confirmFailedOther.add(1, { cardCompany: company }); return; }
 
   const piStatus = confirmRes.json('status');
   if (piStatus === 'DONE') {
-    confirmDone.add(1);
+    confirmDone.add(1, { cardCompany: company });
   } else if (typeof piStatus === 'string' && piStatus.startsWith('UNKNOWN')) {
-    confirmUnknown.add(1);
+    confirmUnknown.add(1, { cardCompany: company });
   } else {
-    confirmFailedOther.add(1);
+    confirmFailedOther.add(1, { cardCompany: company });
   }
 }
 

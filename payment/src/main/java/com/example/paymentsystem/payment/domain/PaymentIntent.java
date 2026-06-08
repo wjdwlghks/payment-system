@@ -51,6 +51,10 @@ public class PaymentIntent {
     @Column(name = "capture_id", length = 100)
     private String captureId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "card_company", nullable = false, length = 30)
+    private CardCompany cardCompany;
+
     @Version
     @Column(nullable = false)
     private Long version;
@@ -61,13 +65,14 @@ public class PaymentIntent {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    public PaymentIntent(String paymentKey, String orderId, String merchantId, Long amount) {
+    public PaymentIntent(String paymentKey, String orderId, String merchantId, Long amount, CardCompany cardCompany) {
         this.paymentKey = paymentKey;
         this.orderId = orderId;
         this.merchantId = merchantId;
         this.amount = amount;
         this.refundedAmount = 0L;
         this.status = PaymentIntentStatus.AUTH_REQUESTED;
+        this.cardCompany = cardCompany;
     }
 
     @PrePersist

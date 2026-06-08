@@ -28,7 +28,8 @@ services:
       MYSQL_DATABASE: payment
       MYSQL_USER: payment
       MYSQL_PASSWORD: payment
-      CARD_BASE_URL: http://card:8080
+      CARD_A_BASE_URL: http://card:8080
+      CARD_B_BASE_URL: http://card-b:8080
       FDS_BASE_URL: http://fds:8080
       MERCHANT_BASE_URL: http://merchant:8080
     volumes:
@@ -39,6 +40,8 @@ services:
       fds:
         condition: service_started
       card:
+        condition: service_started
+      card-b:
         condition: service_started
 
   fds:
@@ -81,6 +84,27 @@ services:
       card-mysql:
         condition: service_healthy
 
+  card-b:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: card
+    container_name: card-b
+    ports:
+      - "8085:8080"
+    environment:
+      MYSQL_HOST: card-b-mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: card
+      MYSQL_USER: card
+      MYSQL_PASSWORD: card
+    volumes:
+      - recon-files:/recon-files
+    depends_on:
+      card-b-mysql:
+        condition: service_healthy
+
   payment-mysql:
     image: mysql:8.4
     container_name: payment-mysql
@@ -117,6 +141,24 @@ services:
     volumes:
       - card-mysql-data:/var/lib/mysql
 
+  card-b-mysql:
+    image: mysql:8.4
+    container_name: card-b-mysql
+    ports:
+      - "3310:3306"
+    environment:
+      MYSQL_DATABASE: card
+      MYSQL_USER: card
+      MYSQL_PASSWORD: card
+      MYSQL_ROOT_PASSWORD: root
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ucard", "-pcard"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - card-b-mysql-data:/var/lib/mysql
+
   fds-mysql:
     image: mysql:8.4
     container_name: fds-mysql
@@ -138,5 +180,6 @@ services:
 volumes:
   payment-mysql-data:
   card-mysql-data:
+  card-b-mysql-data:
   fds-mysql-data:
   recon-files:

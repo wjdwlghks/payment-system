@@ -1,5 +1,7 @@
 package com.example.paymentsystem.payment.dto;
 
+import com.example.paymentsystem.payment.domain.CardCompany;
+
 public record CaptureRequestContext(
         Long paymentIntentId,
         Long transactionId,
@@ -8,7 +10,7 @@ public record CaptureRequestContext(
         String orderId,
         Long amount,
         String idempotentKey,
-        String cardRequestRef
+        String cardRequestRef,
+        CardCompany cardCompany
 ) {
 }
-
