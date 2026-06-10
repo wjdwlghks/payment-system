@@ -37,7 +37,6 @@ export const options = {
 };
 
 const MERCHANT_BASE = __ENV.MERCHANT_BASE || 'http://localhost:8081';
-const MERCHANT_ID   = __ENV.MERCHANT_ID   || 'merchant-001';
 
 // VU 홀수 → CARD_CORP_A (장애 주입 대상), 짝수 → CARD_CORP_B (정상)
 function cardCompany() {
@@ -46,14 +45,15 @@ function cardCompany() {
 
 // ── 메인 시나리오 ────────────────────────────────────────────
 export default function () {
-  const company = cardCompany();
-  const orderId = `order-${__VU}-${__ITER}-${uuidv4().slice(0, 8)}`;
-  const amount  = 10000;
+  const company    = cardCompany();
+  const merchantId = `merchant-${String(__VU).padStart(3, '0')}`;
+  const orderId    = `order-${__VU}-${__ITER}-${uuidv4().slice(0, 8)}`;
+  const amount     = 10000;
 
   // 1) Auth
   const authRes = http.post(
     `${MERCHANT_BASE}/api/payments`,
-    JSON.stringify({ merchantId: MERCHANT_ID, orderId, amount, cardCompany: company }),
+    JSON.stringify({ merchantId, orderId, amount, cardCompany: company }),
     { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'auth', cardCompany: company } }
   );
 

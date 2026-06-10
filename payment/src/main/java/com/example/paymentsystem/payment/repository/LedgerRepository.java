@@ -14,14 +14,14 @@ public interface LedgerRepository extends JpaRepository<LedgerEntry, Long> {
     @Query("""
     select coalesce(sum(e.amount), 0L)
     from LedgerEntry e
-    where e.account.id = :accountId
+    where e.account.id in :accountIds
       and e.entryType in :entryTypes
       and e.direction = :direction
       and e.postedAt >= :rangeStart
       and e.postedAt < :rangeEnd
 """)
     long sumDirectionalAmount(
-            @Param("accountId") Long accountId,
+            @Param("accountIds") Collection<Long> accountIds,
             @Param("entryTypes") Collection<LedgerEntryType> entryTypes,
             @Param("direction") LedgerDirection direction,
             @Param("rangeStart") Instant rangeStart,

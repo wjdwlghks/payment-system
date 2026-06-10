@@ -51,9 +51,8 @@ public class PgVerifyController {
     public LedgerResult ledger() {
         long unbalancedPostings = ledgerEntryRepository.countUnbalancedPostings();
         long cardReceivableBalance = accountRepository
-                .findByAccountTypeAndMerchantId(AccountType.CARD_NETWORK_RECEIVABLE, Account.GLOBAL_MERCHANT_ID)
-                .map(Account::getBalance)
-                .orElse(0L);
+                .findAllByAccountTypeAndMerchantId(AccountType.CARD_NETWORK_RECEIVABLE, Account.GLOBAL_MERCHANT_ID)
+                .stream().mapToLong(Account::getBalance).sum();
 
         boolean passed = unbalancedPostings == 0 && cardReceivableBalance == 0;
 

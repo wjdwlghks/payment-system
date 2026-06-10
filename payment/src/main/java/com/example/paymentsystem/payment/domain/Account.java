@@ -46,6 +46,9 @@ public class Account {
     @Column(nullable = false)
     private Long version;
 
+    @Column(name = "bucket_index", nullable = false)
+    private int bucketIndex;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

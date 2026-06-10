@@ -77,12 +77,15 @@ public class ReconciliationValidationService {
         Instant rangeStart = batch.getBusinessDate().atStartOfDay(KST).toInstant();
         Instant rangeEnd = batch.getBusinessDate().plusDays(1).atStartOfDay(KST).toInstant();
 
-        Account cardReceivable = accountRepository
-                .findByAccountTypeAndMerchantId(AccountType.CARD_NETWORK_RECEIVABLE, GLOBAL)
-                .orElseThrow(() -> new IllegalStateException("CARD_NETWORK_RECEIVABLE account not found"));
+        List<Account> cardReceivableBuckets = accountRepository
+                .findAllByAccountTypeAndMerchantId(AccountType.CARD_NETWORK_RECEIVABLE, GLOBAL);
+        if (cardReceivableBuckets.isEmpty()) {
+            throw new IllegalStateException("CARD_NETWORK_RECEIVABLE accounts not found");
+        }
+        List<Long> bucketIds = cardReceivableBuckets.stream().map(Account::getId).toList();
 
-        long currentBalance = cardReceivable.getBalance();
-        long thisBatchLedgerNet = computeLedgerNet(cardReceivable.getId(), rangeStart, rangeEnd);
+        long currentBalance = cardReceivableBuckets.stream().mapToLong(Account::getBalance).sum();
+        long thisBatchLedgerNet = computeLedgerNet(bucketIds, rangeStart, rangeEnd);
         long previousBalance = currentBalance - thisBatchLedgerNet;
         if (previousBalance != 0) {
             ReconciliationCarryOverException carryOver = new ReconciliationCarryOverException(previousBalance);
@@ -255,12 +258,12 @@ public class ReconciliationValidationService {
         return resolved;
     }
 
-    private long computeLedgerNet(Long accountId, Instant rangeStart, Instant rangeEnd) {
+    private long computeLedgerNet(List<Long> accountIds, Instant rangeStart, Instant rangeEnd) {
         long debitSum = ledgerRepository.sumDirectionalAmount(
-                accountId, RECON_LEDGER_TYPES, LedgerDirection.DEBIT, rangeStart, rangeEnd
+                accountIds, RECON_LEDGER_TYPES, LedgerDirection.DEBIT, rangeStart, rangeEnd
         );
         long creditSum = ledgerRepository.sumDirectionalAmount(
-                accountId, RECON_LEDGER_TYPES, LedgerDirection.CREDIT, rangeStart, rangeEnd
+                accountIds, RECON_LEDGER_TYPES, LedgerDirection.CREDIT, rangeStart, rangeEnd
         );
         return debitSum - creditSum;
     }
