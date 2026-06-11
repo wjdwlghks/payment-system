@@ -46,9 +46,6 @@ public class Account {
     @Column(nullable = false)
     private Long version;
 
-    @Column(name = "bucket_index", nullable = false)
-    private int bucketIndex;
-
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -72,6 +69,17 @@ public class Account {
     @PreUpdate
     void preUpdate() {
         this.updatedAt = Instant.now();
+    }
+
+    public long computeNetDelta(long debitSum, long creditSum) {
+        return switch (accountClass) {
+            case ASSET -> debitSum - creditSum;
+            case LIABILITY, REVENUE -> creditSum - debitSum;
+        };
+    }
+
+    public void applyDelta(long delta) {
+        this.balance += delta;
     }
 
     public void apply(LedgerDirection direction, Long amount) {

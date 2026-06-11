@@ -77,15 +77,14 @@ public class ReconciliationValidationService {
         Instant rangeStart = batch.getBusinessDate().atStartOfDay(KST).toInstant();
         Instant rangeEnd = batch.getBusinessDate().plusDays(1).atStartOfDay(KST).toInstant();
 
-        List<Account> cardReceivableBuckets = accountRepository
-                .findAllByAccountTypeAndMerchantId(AccountType.CARD_NETWORK_RECEIVABLE, GLOBAL);
-        if (cardReceivableBuckets.isEmpty()) {
-            throw new IllegalStateException("CARD_NETWORK_RECEIVABLE accounts not found");
-        }
-        List<Long> bucketIds = cardReceivableBuckets.stream().map(Account::getId).toList();
+        Account cardReceivable = accountRepository
+                .findByAccountTypeAndMerchantId(AccountType.CARD_NETWORK_RECEIVABLE, GLOBAL)
+                .orElseThrow(() -> new IllegalStateException("CARD_NETWORK_RECEIVABLE account not found"));
 
-        long currentBalance = cardReceivableBuckets.stream().mapToLong(Account::getBalance).sum();
-        long thisBatchLedgerNet = computeLedgerNet(bucketIds, rangeStart, rangeEnd);
+        long debit = ledgerRepository.sumUnappliedByDirection(cardReceivable.getId(), LedgerDirection.DEBIT);
+        long credit = ledgerRepository.sumUnappliedByDirection(cardReceivable.getId(), LedgerDirection.CREDIT);
+        long currentBalance = cardReceivable.getBalance() + cardReceivable.computeNetDelta(debit, credit);
+        long thisBatchLedgerNet = computeLedgerNet(List.of(cardReceivable.getId()), rangeStart, rangeEnd);
         long previousBalance = currentBalance - thisBatchLedgerNet;
         if (previousBalance != 0) {
             ReconciliationCarryOverException carryOver = new ReconciliationCarryOverException(previousBalance);

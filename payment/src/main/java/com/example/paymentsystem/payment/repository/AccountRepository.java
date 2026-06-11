@@ -8,27 +8,17 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.List;
 import java.util.Optional;
 
 public interface AccountRepository extends JpaRepository<Account, Long> {
 
-    @Query("SELECT a FROM Account a WHERE a.accountType = :type AND a.merchantId = :merchantId AND a.bucketIndex = 0")
+    @Query("SELECT a FROM Account a WHERE a.accountType = :type AND a.merchantId = :merchantId")
     Optional<Account> findByAccountTypeAndMerchantId(
             @Param("type") AccountType type,
             @Param("merchantId") String merchantId);
 
-    // 단일 bucket (non-sharded 또는 특정 bucket) 잠금
+    // AccountBalanceFlusher 전용 — 잔액 갱신 시에만 락 사용
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT a FROM Account a WHERE a.accountType = :type AND a.merchantId = :merchantId AND a.bucketIndex = :bucket")
-    Optional<Account> findByAccountTypeAndMerchantIdAndBucketIndexForUpdate(
-            @Param("type") AccountType type,
-            @Param("merchantId") String merchantId,
-            @Param("bucket") int bucket);
-
-    // CARD_NETWORK_RECEIVABLE 전체 bucket 조회 (carry-over, verify용)
-    @Query("SELECT a FROM Account a WHERE a.accountType = :type AND a.merchantId = :merchantId ORDER BY a.bucketIndex")
-    List<Account> findAllByAccountTypeAndMerchantId(
-            @Param("type") AccountType type,
-            @Param("merchantId") String merchantId);
+    @Query("SELECT a FROM Account a WHERE a.id = :id")
+    Optional<Account> findByIdForUpdate(@Param("id") Long id);
 }

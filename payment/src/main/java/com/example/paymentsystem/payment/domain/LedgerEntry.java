@@ -49,6 +49,9 @@ public class LedgerEntry {
     @Column(name = "posted_at", nullable = false)
     private Instant postedAt;
 
+    @Column(nullable = false)
+    private boolean applied = false;
+
     public LedgerEntry(
             LedgerPosting posting,
             Account account,

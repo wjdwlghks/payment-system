@@ -83,7 +83,7 @@ public class ClearingService {
             );
         }
 
-        ledgerService.postClearing(batch.getId(), transactions);
+        ledgerService.postClearing(batch.getId(), totalAmount);
 
         batch.markCleared();
 
@@ -137,7 +137,7 @@ public class ClearingService {
             );
         }
 
-        ledgerService.postClearing(batch.getId(), reconciledTransactions);
+        ledgerService.postClearing(batch.getId(), netAmount);
 
         batch.markCleared();
 

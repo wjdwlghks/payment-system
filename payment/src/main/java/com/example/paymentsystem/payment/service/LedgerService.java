@@ -9,7 +9,6 @@ import com.example.paymentsystem.payment.repository.PaymentTransactionRepository
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.TreeMap;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -20,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class LedgerService {
 
     private static final String GLOBAL = "GLOBAL";
-    private static final int SHARD_COUNT = 16;
 
     private final LedgerRepository ledgerRepository;
     private final LedgerPostingRepository ledgerPostingRepository;
@@ -32,12 +30,10 @@ public class LedgerService {
         PaymentTransaction transaction = paymentTransactionRepository.findById(captureTransactionId)
                 .orElseThrow();
         String merchantId = transaction.getPaymentIntent().getMerchantId();
-        String paymentKey = transaction.getPaymentIntent().getPaymentKey();
 
-        int bucket = bucketIndex(paymentKey);
-        Account cardReceivable = cardReceivableBucketForUpdate(bucket);
+        Account cardReceivable = globalAccount(AccountType.CARD_NETWORK_RECEIVABLE);
         Account merchantPending = merchantAccount(AccountType.MERCHANT_PENDING, merchantId);
-        Account feeRevenue = shardedGlobalAccount(AccountType.FEE_REVENUE, bucket);
+        Account feeRevenue = globalAccount(AccountType.FEE_REVENUE);
 
         long amount = transaction.getAmount();
         long fee = calculateFee(amount);
@@ -57,14 +53,13 @@ public class LedgerService {
         PaymentTransaction transaction = paymentTransactionRepository.findById(refundTransactionId)
                 .orElseThrow();
         String merchantId = transaction.getPaymentIntent().getMerchantId();
-        String paymentKey = transaction.getPaymentIntent().getPaymentKey();
 
-        Account cardReceivable = cardReceivableBucketForUpdate(bucketIndex(paymentKey));
+        Account cardReceivable = globalAccount(AccountType.CARD_NETWORK_RECEIVABLE);
         Account merchantPending = merchantAccount(AccountType.MERCHANT_PENDING, merchantId);
         Account merchantAvailable = merchantAccount(AccountType.MERCHANT_AVAILABLE, merchantId);
 
         long refundAmount = transaction.getAmount();
-        long takeFromPending = Math.clamp(merchantPending.getBalance(), 0L, refundAmount);
+        long takeFromPending = Math.clamp(getBalanceNow(merchantPending), 0L, refundAmount);
         long takeFromAvailable = refundAmount - takeFromPending;
 
         List<LedgerEntry> entries = new ArrayList<>();
@@ -80,38 +75,15 @@ public class LedgerService {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public void postClearing(Long batchId, List<PaymentTransaction> transactions) {
-        // paymentKey 해시 기준으로 bucket별 net 계산
-        // CAPTURE → +amount, REFUND → -amount
-        TreeMap<Integer, Long> bucketNet = new TreeMap<>();
-        for (PaymentTransaction tx : transactions) {
-            int bucket = bucketIndex(tx.getPaymentIntent().getPaymentKey());
-            long delta = tx.getType() == TransactionType.CAPTURE ? tx.getAmount() : -tx.getAmount();
-            bucketNet.merge(bucket, delta, Long::sum);
-        }
-
+    public void postClearing(Long batchId, Long totalAmount) {
+        Account cardReceivable = globalAccount(AccountType.CARD_NETWORK_RECEIVABLE);
         Account bank = globalAccount(AccountType.BANK_ACCOUNT);
 
-        // 오름차순(TreeMap 기본)으로 순회하여 lock 순서 고정
-        for (var entry : bucketNet.entrySet()) {
-            int bucket = entry.getKey();
-            long net = entry.getValue();
-            if (net == 0) continue;
+        List<LedgerEntry> entries = new ArrayList<>();
+        entries.add(new LedgerEntry(cardReceivable, LedgerDirection.CREDIT, totalAmount, LedgerEntryType.CLEARING));
+        entries.add(new LedgerEntry(bank, LedgerDirection.DEBIT, totalAmount, LedgerEntryType.CLEARING));
 
-            Account cardReceivable = cardReceivableBucketForUpdate(bucket);
-            List<LedgerEntry> entries = new ArrayList<>();
-
-            if (net > 0) {
-                entries.add(new LedgerEntry(cardReceivable, LedgerDirection.CREDIT, net, LedgerEntryType.CLEARING));
-                entries.add(new LedgerEntry(bank, LedgerDirection.DEBIT, net, LedgerEntryType.CLEARING));
-            } else {
-                entries.add(new LedgerEntry(cardReceivable, LedgerDirection.DEBIT, -net, LedgerEntryType.CLEARING));
-                entries.add(new LedgerEntry(bank, LedgerDirection.CREDIT, -net, LedgerEntryType.CLEARING));
-            }
-
-            post(LedgerPostingType.CLEARING, LedgerSourceType.CLEARING_BATCH,
-                    batchId + "-" + bucket, entries);
-        }
+        post(LedgerPostingType.CLEARING, LedgerSourceType.CLEARING_BATCH, batchId.toString(), entries);
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -162,32 +134,26 @@ public class LedgerService {
 
         for (LedgerEntry entry : entries) {
             entry.assignPosting(posting);
-            entry.getAccount().apply(entry.getDirection(), entry.getAmount());
+            // account.apply() 호출 없음 — AccountBalanceFlusher가 주기적으로 갱신
         }
 
         ledgerRepository.saveAll(entries);
     }
 
-    private Account cardReceivableBucketForUpdate(int bucket) {
-        return accountRepository.findByAccountTypeAndMerchantIdAndBucketIndexForUpdate(
-                AccountType.CARD_NETWORK_RECEIVABLE, GLOBAL, bucket).orElseThrow();
-    }
-
-    private Account shardedGlobalAccount(AccountType type, int bucket) {
-        return accountRepository.findByAccountTypeAndMerchantIdAndBucketIndexForUpdate(type, GLOBAL, bucket).orElseThrow();
+    // snapshot + unapplied 합산으로 현재 잔액 근사치 반환
+    private long getBalanceNow(Account account) {
+        long debit = ledgerRepository.sumUnappliedByDirection(account.getId(), LedgerDirection.DEBIT);
+        long credit = ledgerRepository.sumUnappliedByDirection(account.getId(), LedgerDirection.CREDIT);
+        return account.getBalance() + account.computeNetDelta(debit, credit);
     }
 
     private Account globalAccount(AccountType type) {
-        return accountRepository.findByAccountTypeAndMerchantIdAndBucketIndexForUpdate(type, GLOBAL, 0).orElseThrow();
+        return accountRepository.findByAccountTypeAndMerchantId(type, GLOBAL).orElseThrow();
     }
 
     private Account merchantAccount(AccountType type, String merchantId) {
-        return accountRepository.findByAccountTypeAndMerchantIdAndBucketIndexForUpdate(type, merchantId, 0)
+        return accountRepository.findByAccountTypeAndMerchantId(type, merchantId)
                 .orElseGet(() -> accountRepository.save(new Account(type, AccountClass.LIABILITY, merchantId)));
-    }
-
-    private int bucketIndex(String paymentKey) {
-        return Math.abs(paymentKey.hashCode()) % SHARD_COUNT;
     }
 
     private long total(List<LedgerEntry> entries, LedgerDirection direction) {

@@ -3,11 +3,13 @@ package com.example.paymentsystem.payment.controller;
 import com.example.paymentsystem.payment.domain.Account;
 import com.example.paymentsystem.payment.domain.AccountType;
 import com.example.paymentsystem.payment.domain.IdempotentStatus;
+import com.example.paymentsystem.payment.domain.LedgerDirection;
 import com.example.paymentsystem.payment.domain.TransactionStatus;
 import com.example.paymentsystem.payment.domain.WebhookOutboxStatus;
 import com.example.paymentsystem.payment.repository.AccountRepository;
 import com.example.paymentsystem.payment.repository.IdempotencyKeyRepository;
 import com.example.paymentsystem.payment.repository.LedgerEntryRepository;
+import com.example.paymentsystem.payment.repository.LedgerRepository;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
 import com.example.paymentsystem.payment.repository.ReconBatchRepository;
 import com.example.paymentsystem.payment.repository.WebhookOutboxRepository;
@@ -25,6 +27,7 @@ public class PgVerifyController {
     private final WebhookOutboxRepository outboxRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
     private final AccountRepository accountRepository;
+    private final LedgerRepository ledgerRepository;
     private final ReconBatchRepository reconBatchRepository;
     private final IdempotencyKeyRepository idempotencyKeyRepository;
 
@@ -51,8 +54,13 @@ public class PgVerifyController {
     public LedgerResult ledger() {
         long unbalancedPostings = ledgerEntryRepository.countUnbalancedPostings();
         long cardReceivableBalance = accountRepository
-                .findAllByAccountTypeAndMerchantId(AccountType.CARD_NETWORK_RECEIVABLE, Account.GLOBAL_MERCHANT_ID)
-                .stream().mapToLong(Account::getBalance).sum();
+                .findByAccountTypeAndMerchantId(AccountType.CARD_NETWORK_RECEIVABLE, Account.GLOBAL_MERCHANT_ID)
+                .map(a -> {
+                    long d = ledgerRepository.sumUnappliedByDirection(a.getId(), LedgerDirection.DEBIT);
+                    long c = ledgerRepository.sumUnappliedByDirection(a.getId(), LedgerDirection.CREDIT);
+                    return a.getBalance() + a.computeNetDelta(d, c);
+                })
+                .orElse(0L);
 
         boolean passed = unbalancedPostings == 0 && cardReceivableBalance == 0;
 
