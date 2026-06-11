@@ -14,5 +14,6 @@ public enum PaymentIntentStatus {
     CAPTURE_FAILED,
     DONE,
     REFUNDED,
-    PARTIALLY_REFUNDED
+    PARTIALLY_REFUNDED,
+    CANCELLED
 }

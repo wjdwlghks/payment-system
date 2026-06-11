@@ -2,6 +2,7 @@ package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.LedgerSourceType;
 import com.example.paymentsystem.payment.domain.PaymentIntent;
+import com.example.paymentsystem.payment.domain.PaymentIntentStatus;
 import com.example.paymentsystem.payment.domain.PaymentTransaction;
 import com.example.paymentsystem.payment.domain.TransactionStatus;
 import com.example.paymentsystem.payment.domain.TransactionType;
@@ -252,6 +253,19 @@ public class PaymentCommandService {
                 captureTransaction.getCardRequestRef(),
                 paymentIntent.getCardCompany()
         );
+    }
+
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class}, maxAttempts = 3)
+    @Transactional
+    public void cancelAuth(String paymentKey) {
+        PaymentIntent intent = paymentIntentRepository.findByPaymentKey(paymentKey)
+                .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + paymentKey));
+        if (intent.getStatus() == PaymentIntentStatus.CANCELLED) return;
+        if (intent.getStatus() != PaymentIntentStatus.AUTH_READY
+                && intent.getStatus() != PaymentIntentStatus.FDS_READY) {
+            throw new IllegalStateException("Cannot cancel auth: status is " + intent.getStatus());
+        }
+        intent.markCancelled();
     }
 
     @Transactional

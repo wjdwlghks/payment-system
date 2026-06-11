@@ -1,8 +1,10 @@
 package com.example.paymentsystem.payment.repository;
 
+import com.example.paymentsystem.payment.domain.AccountType;
 import com.example.paymentsystem.payment.domain.LedgerDirection;
 import com.example.paymentsystem.payment.domain.LedgerEntry;
 import com.example.paymentsystem.payment.domain.LedgerEntryType;
+import com.example.paymentsystem.payment.domain.LedgerPostingType;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -42,4 +44,18 @@ public interface LedgerRepository extends JpaRepository<LedgerEntry, Long> {
     @Modifying
     @Query("update LedgerEntry e set e.applied = true where e.account.id = :accountId and e.applied = false")
     void markApplied(@Param("accountId") Long accountId);
+
+    @Query("""
+    select coalesce(sum(e.amount), 0L) from LedgerEntry e
+    where e.posting.postingType = :postingType
+      and e.posting.sourceId = :sourceId
+      and e.account.accountType = :accountType
+      and e.direction = :direction
+""")
+    long findEntryAmountByPostingAndAccount(
+            @Param("postingType") LedgerPostingType postingType,
+            @Param("sourceId") String sourceId,
+            @Param("accountType") AccountType accountType,
+            @Param("direction") LedgerDirection direction
+    );
 }

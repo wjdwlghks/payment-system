@@ -28,6 +28,7 @@ public class RefundCommandService {
     private final RefundRepository refundRepository;
     private final LedgerService ledgerService;
     private final WebhookService webhookService;
+    private final RefundRiskService refundRiskService;
     private final EntityManager entityManager;
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
@@ -106,6 +107,7 @@ public class RefundCommandService {
 
         webhookService.saveRefundSucceeded(refund);
         ledgerService.postRefund(txId, sourceType);
+        refundRiskService.checkAndRecord(paymentIntent.getMerchantId(), txId, refundedAmount);
 
         return toResponse(refundKey, RefundStatus.SUCCEEDED, refund.getAmount());
     }

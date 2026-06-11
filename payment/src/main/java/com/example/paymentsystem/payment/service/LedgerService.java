@@ -52,15 +52,39 @@ public class LedgerService {
     public void postRefund(Long refundTransactionId, LedgerSourceType sourceType) {
         PaymentTransaction transaction = paymentTransactionRepository.findById(refundTransactionId)
                 .orElseThrow();
-        String merchantId = transaction.getPaymentIntent().getMerchantId();
+        PaymentIntent intent = transaction.getPaymentIntent();
+        String merchantId = intent.getMerchantId();
 
         Account cardReceivable = globalAccount(AccountType.CARD_NETWORK_RECEIVABLE);
         Account merchantPending = merchantAccount(AccountType.MERCHANT_PENDING, merchantId);
         Account merchantAvailable = merchantAccount(AccountType.MERCHANT_AVAILABLE, merchantId);
+        Account feeRevenue = globalAccount(AccountType.FEE_REVENUE);
 
         long refundAmount = transaction.getAmount();
-        long takeFromPending = Math.clamp(getBalanceNow(merchantPending), 0L, refundAmount);
-        long takeFromAvailable = refundAmount - takeFromPending;
+
+        PaymentTransaction captureTx = paymentTransactionRepository
+                .findByPaymentIntentAndTypeAndStatus(intent, TransactionType.CAPTURE, TransactionStatus.SUCCEEDED)
+                .orElseThrow(() -> new IllegalStateException("No SUCCEEDED CAPTURE tx found for intent"));
+
+        long originalFee = ledgerRepository.findEntryAmountByPostingAndAccount(
+                LedgerPostingType.CAPTURE, captureTx.getId().toString(),
+                AccountType.FEE_REVENUE, LedgerDirection.CREDIT
+        );
+        long captureAmount = captureTx.getAmount();
+
+        long proportionalFee;
+        if (intent.getRefundedAmount().equals(captureAmount)) {
+            proportionalFee = originalFee - intent.getTotalFeeRefunded();
+        } else {
+            proportionalFee = refundAmount * originalFee / captureAmount;
+        }
+        if (proportionalFee < 0) proportionalFee = 0;
+
+        intent.addFeeRefunded(proportionalFee);
+
+        long merchantBurden = refundAmount - proportionalFee;
+        long takeFromPending = Math.clamp(getBalanceNow(merchantPending), 0L, merchantBurden);
+        long takeFromAvailable = merchantBurden - takeFromPending;
 
         List<LedgerEntry> entries = new ArrayList<>();
         if (takeFromPending > 0) {
@@ -68,6 +92,9 @@ public class LedgerService {
         }
         if (takeFromAvailable > 0) {
             entries.add(new LedgerEntry(merchantAvailable, LedgerDirection.DEBIT, takeFromAvailable, LedgerEntryType.REFUND));
+        }
+        if (proportionalFee > 0) {
+            entries.add(new LedgerEntry(feeRevenue, LedgerDirection.DEBIT, proportionalFee, LedgerEntryType.REFUND));
         }
         entries.add(new LedgerEntry(cardReceivable, LedgerDirection.CREDIT, refundAmount, LedgerEntryType.REFUND));
 

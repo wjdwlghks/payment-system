@@ -77,6 +77,21 @@ public class CardClient {
         }
     }
 
+    public CardVoidResponse voidAuth(CardCompany company, String authId) {
+        Limiter.Listener token = acquireOrThrow(company);
+        try {
+            CardVoidResponse response = restClient(company).post()
+                    .uri("/v1/authorizations/{authId}/void", authId)
+                    .retrieve()
+                    .body(CardVoidResponse.class);
+            token.onSuccess();
+            return response;
+        } catch (Exception e) {
+            token.onDropped();
+            throw e;
+        }
+    }
+
     public AuthInquiryResponse inquiryAuth(CardCompany company, String authIdempotentKey) {
         return restClient(company).get()
                 .uri("/v1/authorizations/inquiries/{authIdempotentKey}", authIdempotentKey)
