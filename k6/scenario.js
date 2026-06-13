@@ -36,9 +36,9 @@ export const options = {
   },
 };
 
-const MERCHANT_BASE = __ENV.MERCHANT_BASE || 'http://localhost:8081';
+const PAYMENT_BASE = __ENV.PAYMENT_BASE || 'http://localhost:8082';
 
-// VU 홀수 → CARD_CORP_A (장애 주입 대상), 짝수 → CARD_CORP_B (정상)
+// VU 홀수 → CARD_CORP_A, 짝수 → CARD_CORP_B
 function cardCompany() {
   return (__VU % 2 === 1) ? 'CARD_CORP_A' : 'CARD_CORP_B';
 }
@@ -50,9 +50,9 @@ export default function () {
   const orderId    = `order-${__VU}-${__ITER}-${uuidv4().slice(0, 8)}`;
   const amount     = 10000;
 
-  // 1) Auth
+  // 1) Auth + FDS
   const authRes = http.post(
-    `${MERCHANT_BASE}/api/payments`,
+    `${PAYMENT_BASE}/v1/payment`,
     JSON.stringify({ merchantId, orderId, amount, cardCompany: company }),
     { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'auth', cardCompany: company } }
   );
@@ -64,11 +64,9 @@ export default function () {
   const paymentKey = authRes.json('paymentKey');
   if (!paymentKey) return;
 
-  sleep(0.1);
-
   // 2) Confirm (Capture)
   const confirmRes = http.post(
-    `${MERCHANT_BASE}/api/payments/${paymentKey}/confirm`,
+    `${PAYMENT_BASE}/v1/payment/${paymentKey}/confirm`,
     null,
     { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'confirm', cardCompany: company } }
   );
