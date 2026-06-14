@@ -32,6 +32,7 @@ services:
       CARD_B_BASE_URL: http://card-b:8080
       FDS_BASE_URL: http://fds:8080
       MERCHANT_BASE_URL: http://merchant:8080
+      CARD_LIMITER_MIN_LIMIT: ${CARD_LIMITER_MIN_LIMIT:-1}
     volumes:
       - recon-files:/recon-files
     depends_on:

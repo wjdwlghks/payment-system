@@ -2,12 +2,14 @@ package com.example.paymentsystem.card.controller;
 
 import com.example.paymentsystem.card.domain.CardRefund;
 import com.example.paymentsystem.card.domain.CardRefundStatus;
+import com.example.paymentsystem.card.dto.RefundInquiryResponse;
 import com.example.paymentsystem.card.dto.RefundRequest;
 import com.example.paymentsystem.card.dto.RefundResponse;
 import com.example.paymentsystem.card.repository.CardRefundRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -52,5 +54,17 @@ public class RefundController {
         }
 
         return ResponseEntity.ok(new RefundResponse(true, refundId, refundedAt));
+    }
+
+    @GetMapping("/refund/inquiries/{refundIdempotentKey}")
+    public ResponseEntity<RefundInquiryResponse> inquire(@PathVariable String refundIdempotentKey) {
+        RefundInquiryResponse response = cardRefundRepository
+                .findByRefundIdempotentKey(refundIdempotentKey)
+                .map(r -> new RefundInquiryResponse(
+                        r.getStatus() == CardRefundStatus.SUCCESS ? "success" : "failed",
+                        r.getRefundId()
+                ))
+                .orElseGet(() -> new RefundInquiryResponse("not_found", null));
+        return ResponseEntity.ok(response);
     }
 }

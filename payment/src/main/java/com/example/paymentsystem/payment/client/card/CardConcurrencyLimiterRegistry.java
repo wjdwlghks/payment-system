@@ -5,6 +5,7 @@ import com.netflix.concurrency.limits.Limiter;
 import com.netflix.concurrency.limits.limit.Gradient2Limit;
 import com.netflix.concurrency.limits.limiter.SimpleLimiter;
 import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.EnumMap;
@@ -14,6 +15,9 @@ import java.util.Optional;
 @Component
 public class CardConcurrencyLimiterRegistry {
 
+    @Value("${card.limiter.min-limit:1}")
+    private int minLimit;
+
     private final Map<CardCompany, SimpleLimiter<Void>> limiters = new EnumMap<>(CardCompany.class);
     private final Map<CardCompany, Gradient2Limit> limits = new EnumMap<>(CardCompany.class);
 
@@ -22,7 +26,7 @@ public class CardConcurrencyLimiterRegistry {
         for (CardCompany company : CardCompany.values()) {
             Gradient2Limit limit = Gradient2Limit.newBuilder()
                     .initialLimit(20)
-                    .minLimit(1)
+                    .minLimit(minLimit)
                     .maxConcurrency(200)
                     .smoothing(0.2)
                     .build();

@@ -8,3 +8,8 @@ notes.md
 CLAUDE.md
 recon-files
 results
+
+# k6 테스트 산출물
+*-summary.json
+iso-ml*.json
+isolation-*.json

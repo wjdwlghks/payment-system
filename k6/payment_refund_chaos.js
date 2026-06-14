@@ -5,9 +5,13 @@ import { Counter } from 'k6/metrics';
 import { textSummary } from 'https://jslib.k6.io/k6-summary/0.0.2/index.js';
 
 // ── 메트릭 ──────────────────────────────────────────────────
-const paymentOk      = new Counter('payment_ok');       // FDS_READY
-const paymentUnknown = new Counter('payment_unknown');   // UNKNOWN_AUTH / UNKNOWN_FDS
-const paymentFail    = new Counter('payment_fail');      // AUTH_FAILED / FDS_FAILED / HTTP 에러
+const authOk       = new Counter('auth_ok');         // auth 성공 (이후 fds 진행)
+const authUnknown  = new Counter('auth_unknown');    // UNKNOWN_AUTH
+const authFail     = new Counter('auth_fail');       // AUTH_FAILED / HTTP 에러
+
+const fdsOk        = new Counter('fds_ok');          // FDS_READY
+const fdsUnknown   = new Counter('fds_unknown');     // UNKNOWN_FDS
+const fdsFail      = new Counter('fds_fail');        // FDS_FAILED
 
 const captureOk      = new Counter('capture_ok');        // DONE
 const captureUnknown = new Counter('capture_unknown');   // UNKNOWN_CAPTURE
@@ -19,7 +23,8 @@ const refundFail     = new Counter('refund_fail');       // FAIL / HTTP 에러
 
 // ── 서비스 주소 ──────────────────────────────────────────────
 const PAYMENT = __ENV.PAYMENT || 'http://localhost:8082';
-const CARD    = __ENV.CARD    || 'http://localhost:8084';
+const CARD_A  = __ENV.CARD_A  || 'http://localhost:8084';
+const CARD_B  = __ENV.CARD_B  || 'http://localhost:8085';
 const FDS     = __ENV.FDS     || 'http://localhost:8083';
 
 const JSON_HDR = { headers: { 'Content-Type': 'application/json' } };
@@ -55,7 +60,7 @@ export const options = {
   scenarios: {
     chaos: {
       executor: 'constant-vus',
-      vus: 5,
+      vus: 50,
       duration: '2m',
     },
   },
@@ -65,22 +70,25 @@ export const options = {
 // 서버 장애(TIMEOUT_BEFORE, TIMEOUT_AFTER, ERROR_500): 카드/FDS 서버에 주입
 // CONNECT_FAILURE: payment RestClient 인터셉터에 주입 → Resilience4j retry 3회 대상
 export function setup() {
-  injectServerFailures(CARD, 'auth');
-  injectServerFailures(FDS,  'fds_check');
-  injectServerFailures(CARD, 'capture');
-  injectServerFailures(CARD, 'refund');
+  [CARD_A, CARD_B].forEach(card => {
+    injectServerFailures(card, 'auth');
+    injectServerFailures(card, 'capture');
+    injectServerFailures(card, 'refund');
+  });
+  injectServerFailures(FDS, 'fds_check');
 
   injectConnectFailure('card_auth');
   injectConnectFailure('fds_check');
   injectConnectFailure('card_capture');
   injectConnectFailure('card_refund');
 
-  console.log('[setup] all failures injected (prob=0.027 each, 4 types × 4 stages)');
+  console.log('[setup] all failures injected on card-a/card-b/fds (prob=0.027 each, 4 types × 4 stages)');
 }
 
 // ── teardown: 전체 해제 ──────────────────────────────────────
 export function teardown() {
-  http.del(`${CARD}/admin/failure`);
+  http.del(`${CARD_A}/admin/failure`);
+  http.del(`${CARD_B}/admin/failure`);
   http.del(`${FDS}/admin/failure`);
   http.del(`${PAYMENT}/admin/failure`);
   console.log('[teardown] cleared all failures');
@@ -93,30 +101,36 @@ export default function () {
   const amount     = 10000;
   const tag        = { tags: { vu: String(__VU) } };
 
+  // VU 홀수 → CARD_CORP_A, 짝수 → CARD_CORP_B (단일 카드사 집중 회피)
+  const company = (__VU % 2 === 1) ? 'CARD_CORP_A' : 'CARD_CORP_B';
+
   // ── 1) Auth + FDS ────────────────────────────────────────
   const authRes = http.post(
     `${PAYMENT}/v1/payment`,
-    JSON.stringify({ orderId, merchantId, amount, cardCompany: 'CARD_CORP_A' }),
+    JSON.stringify({ orderId, merchantId, amount, cardCompany: company }),
     { ...JSON_HDR, ...tag, timeout: '15s' }
   );
 
   if (!check(authRes, { 'auth 200': r => r.status === 200 })) {
-    paymentFail.add(1);
+    authFail.add(1);
     return;
   }
 
   const authStatus = authRes.json('status');
   const paymentKey = authRes.json('paymentKey');
 
-  if (!paymentKey || authStatus === 'AUTH_FAILED' || authStatus === 'FDS_FAILED') {
-    paymentFail.add(1);
-    return;
-  }
-  if (typeof authStatus === 'string' && authStatus.includes('UNKNOWN')) {
-    paymentUnknown.add(1);
-    return;
-  }
-  paymentOk.add(1);  // FDS_READY
+  // /v1/payment 응답 status로 auth/fds 단계를 분리 판정
+  // auth 실패 시 fds는 실행 안 됨 (순차)
+  if (authStatus === 'AUTH_FAILED')      { authFail.add(1);    return; }
+  if (authStatus === 'UNKNOWN_AUTH')     { authUnknown.add(1); return; }
+  if (!paymentKey)                       { authFail.add(1);    return; }
+
+  // 여기 도달 = auth 성공
+  authOk.add(1);
+
+  if (authStatus === 'FDS_FAILED')       { fdsFail.add(1);     return; }
+  if (authStatus === 'UNKNOWN_FDS')      { fdsUnknown.add(1);  return; }
+  fdsOk.add(1);  // FDS_READY
 
   sleep(0.1);
 
@@ -175,7 +189,8 @@ export function handleSummary(data) {
   const m   = data.metrics;
   const get = name => (m[name] ? m[name].values.count : 0);
 
-  const totalPayment = get('payment_ok') + get('payment_unknown') + get('payment_fail');
+  const totalAuth    = get('auth_ok')    + get('auth_unknown')    + get('auth_fail');
+  const totalFds     = get('fds_ok')     + get('fds_unknown')     + get('fds_fail');
   const totalCapture = get('capture_ok') + get('capture_unknown') + get('capture_fail');
   const totalRefund  = get('refund_ok')  + get('refund_unknown')  + get('refund_fail');
 
@@ -183,7 +198,8 @@ export function handleSummary(data) {
   const recovery = http.get(`${PAYMENT}/admin/metrics/recovery`).json();
 
   console.log('\n========= Chaos Test Summary =========');
-  console.log(`Payment  total=${totalPayment}  ok=${get('payment_ok')}  unknown=${get('payment_unknown')}  fail=${get('payment_fail')}`);
+  console.log(`Auth     total=${totalAuth}   ok=${get('auth_ok')}   unknown=${get('auth_unknown')}  fail=${get('auth_fail')}`);
+  console.log(`FDS      total=${totalFds}   ok=${get('fds_ok')}   unknown=${get('fds_unknown')}  fail=${get('fds_fail')}`);
   console.log(`Capture  total=${totalCapture}  ok=${get('capture_ok')}  unknown=${get('capture_unknown')}  fail=${get('capture_fail')}`);
   console.log(`Refund   total=${totalRefund}   ok=${get('refund_ok')}   unknown=${get('refund_unknown')}  fail=${get('refund_fail')}`);
 
