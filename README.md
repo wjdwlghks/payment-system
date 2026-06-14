@@ -75,4 +75,5 @@ curl http://localhost:8082/admin/verify/pg-internal
 curl http://localhost:8082/admin/verify/ledger
 ```
 
-
+## 상세 기술
+- https://silent-hail-00b.notion.site/Payment-system-37d85313ee8b8064a960d0337b00dcfe?pvs=74
