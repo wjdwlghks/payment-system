@@ -62,7 +62,9 @@ public class PgVerifyController {
                 })
                 .orElse(0L);
 
-        boolean passed = unbalancedPostings == 0 && cardReceivableBalance == 0;
+        // cardReceivableBalance는 미청산 매입이 남으면 0이 아닐 수 있어 참고값으로만 노출.
+        // 정합성 판정은 복식부기 균형(unbalancedPostings)만 본다.
+        boolean passed = unbalancedPostings == 0;
 
         return new LedgerResult(unbalancedPostings, cardReceivableBalance, passed);
     }
