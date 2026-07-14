@@ -10,7 +10,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import java.time.Instant;
 
 import lombok.*;
@@ -30,20 +29,11 @@ public class CardAuthorization {
     @Column(name = "auth_id", nullable = false, length = 100, unique = true)
     private String authId;
 
-    @Column(name = "auth_idempotent_key", nullable = false, length = 150, unique = true)
-    private String authIdempotentKey;
-
-    @Column(name = "auth_hash", nullable = false, length = 64)
-    private String authHash;
-
-    @Column(name = "capture_idempotent_key", length = 150, unique = true)
-    private String captureIdempotentKey;
+    @Column(name = "card_request_ref", nullable = false, length = 100, unique = true)
+    private String cardRequestRef;
 
     @Column(name = "capture_id", length = 100, unique = true)
     private String captureId;
-
-    @Column(name = "capture_hash", length = 64)
-    private String captureHash;
 
     @Column(nullable = false)
     private Long amount;
@@ -59,7 +49,7 @@ public class CardAuthorization {
     @Column(name = "authorized_at", nullable = false)
     private Instant authorizedAt;
 
-    @Column(name = "capture_card_request_ref", length = 100)
+    @Column(name = "capture_card_request_ref", length = 100, unique = true)
     private String captureCardRequestRef;
 
     @Column(name = "captured_at")
@@ -70,10 +60,6 @@ public class CardAuthorization {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
-
-    @Version
-    @Column(nullable = false)
-    private Long version;
 
     @PrePersist
     void prePersist() {
@@ -87,10 +73,8 @@ public class CardAuthorization {
         this.updatedAt = Instant.now();
     }
 
-    public void capture(String captureId, String captureIdempotentKey, String captureHash, String captureCardRequestRef, Instant capturedAt) {
+    public void capture(String captureId, String captureCardRequestRef, Instant capturedAt) {
         this.captureId = captureId;
-        this.captureIdempotentKey = captureIdempotentKey;
-        this.captureHash = captureHash;
         this.captureCardRequestRef = captureCardRequestRef;
         this.captureStatus = CardCaptureStatus.SUCCESS;
         this.capturedAt = capturedAt;

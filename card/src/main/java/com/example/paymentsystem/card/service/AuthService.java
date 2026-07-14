@@ -2,6 +2,7 @@ package com.example.paymentsystem.card.service;
 
 import com.example.paymentsystem.card.domain.CardAuthorization;
 import com.example.paymentsystem.card.domain.CardAuthStatus;
+import com.example.paymentsystem.card.domain.CardCaptureStatus;
 import com.example.paymentsystem.card.dto.ApiResult;
 import com.example.paymentsystem.card.dto.AuthInquiryResponse;
 import com.example.paymentsystem.card.dto.AuthRequest;
@@ -10,8 +11,9 @@ import com.example.paymentsystem.card.dto.ErrorResponse;
 import com.example.paymentsystem.card.dto.VoidAuthResponse;
 import com.example.paymentsystem.card.repository.CardAuthorizationRepository;
 
+import java.time.Instant;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -20,29 +22,31 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class AuthService {
 
-    private final IdempotentService idempotentService;
     private final CardAuthorizationRepository repository;
     private final ObjectMapper objectMapper;
 
+    // 카드사는 멱등을 보장하지 않는다: 도착한 요청은 무조건 처리한다 (dedup 없음).
+    // cardRequestRef는 dedup 키가 아니라 inquiry가 이 거래를 찾기 위한 매칭 키다.
+    @Transactional
     public ApiResult authorize(AuthRequest request) {
-
-        String authHash = DigestUtils.sha256Hex(
-            request.merchantId() + ":" + request.orderId() + ":" + request.amount()
-        );
-
-        CardAuthorization cardAuth = idempotentService.tryInsert(request, authHash);
-
-        if (!cardAuth.getAuthHash().equals(authHash)) {
-            return errorResult(409, "Request Hash Mismatch");
-        }
+        Instant authorizedAt = Instant.now();
+        CardAuthorization cardAuth = CardAuthorization.builder()
+                .authId("auth-" + UUID.randomUUID())
+                .cardRequestRef(request.cardRequestRef())
+                .amount(request.amount())
+                .authStatus(CardAuthStatus.SUCCESS)
+                .captureStatus(CardCaptureStatus.NOT_STARTED)
+                .authorizedAt(authorizedAt)
+                .build();
+        repository.save(cardAuth);
 
         AuthResponse response = new AuthResponse(true, cardAuth.getAuthId(), cardAuth.getAuthorizedAt());
         String responseBody = objectMapper.writeValueAsString(response);
         return new ApiResult(200, responseBody);
     }
 
-    public ApiResult inquire(String authIdempotentKey) {
-        AuthInquiryResponse response = repository.findByAuthIdempotentKey(authIdempotentKey)
+    public ApiResult inquire(String cardRequestRef) {
+        AuthInquiryResponse response = repository.findByCardRequestRef(cardRequestRef)
                 .map(this::toInquiryResponse)
                 .orElseGet(() -> new AuthInquiryResponse("not_found", null, null));
 

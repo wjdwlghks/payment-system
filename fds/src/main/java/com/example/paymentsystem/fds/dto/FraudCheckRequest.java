@@ -1,7 +1,7 @@
 package com.example.paymentsystem.fds.dto;
 
 public record FraudCheckRequest(
-        String idempotentKey,
+        String requestRef,
         String paymentKey,
         String orderId,
         String merchantId,

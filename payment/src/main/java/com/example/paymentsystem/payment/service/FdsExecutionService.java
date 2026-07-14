@@ -34,7 +34,7 @@ public class FdsExecutionService {
         FdsRequestContext fdsContext = paymentCommandService.createFdsRequest(paymentIntent.getPaymentKey());
 
         FdsCheckRequest checkRequest = new FdsCheckRequest(
-                fdsContext.idempotentKey(),
+                fdsContext.cardRequestRef(),
                 fdsContext.paymentKey(),
                 fdsContext.orderId(),
                 fdsContext.merchantId(),

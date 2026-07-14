@@ -6,5 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CardRefundRepository extends JpaRepository<CardRefund, Long> {
 
-    Optional<CardRefund> findByRefundIdempotentKey(String refundIdempotentKey);
+    Optional<CardRefund> findByCardRequestRef(String cardRequestRef);
 }

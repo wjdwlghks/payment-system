@@ -28,9 +28,9 @@ public class AuthController {
                 .body(result.body());
     }
 
-    @GetMapping("/inquiries/{authIdempotentKey}")
-    public ResponseEntity<String> inquire(@PathVariable String authIdempotentKey) {
-        ApiResult result = authService.inquire(authIdempotentKey);
+    @GetMapping("/inquiries/{cardRequestRef}")
+    public ResponseEntity<String> inquire(@PathVariable String cardRequestRef) {
+        ApiResult result = authService.inquire(cardRequestRef);
         return ResponseEntity.status(result.statusCode())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.body());

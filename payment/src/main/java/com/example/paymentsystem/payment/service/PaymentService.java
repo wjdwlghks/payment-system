@@ -57,7 +57,6 @@ public class PaymentService {
         AuthRequestContext authContext = paymentCommandService.createAuthRequest(request);
 
         CardAuthRequest authRequest = new CardAuthRequest(
-                authContext.idempotentKey(),
                 authContext.cardRequestRef(),
                 authContext.orderId(),
                 authContext.merchantId(),
@@ -133,7 +132,7 @@ public class PaymentService {
         FdsRequestContext fdsContext = paymentCommandService.createFdsRequest(paymentKey);
 
         FdsCheckRequest checkRequest = new FdsCheckRequest(
-                fdsContext.idempotentKey(),
+                fdsContext.cardRequestRef(),
                 fdsContext.paymentKey(),
                 fdsContext.orderId(),
                 fdsContext.merchantId(),

@@ -33,9 +33,9 @@ public class CaptureController {
                 .body(result.body());
     }
 
-    @GetMapping("/captures/inquiries/{captureIdempotentKey}")
-    public ResponseEntity<String> inquire(@PathVariable String captureIdempotentKey) {
-        ApiResult result = captureCommandService.inquire(captureIdempotentKey);
+    @GetMapping("/captures/inquiries/{cardRequestRef}")
+    public ResponseEntity<String> inquire(@PathVariable String cardRequestRef) {
+        ApiResult result = captureCommandService.inquire(cardRequestRef);
         return ResponseEntity.status(result.statusCode())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.body());

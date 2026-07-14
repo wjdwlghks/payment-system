@@ -12,14 +12,14 @@ import org.springframework.data.repository.query.Param;
 public interface CardAuthorizationRepository extends JpaRepository<CardAuthorization, Long> {
 
     Optional<CardAuthorization> findByAuthId(String authId);
-    Optional<CardAuthorization> findByAuthIdempotentKey(String authIdempotentKey);
-    Optional<CardAuthorization> findByCaptureIdempotentKey(String captureIdempotentKey);
+    Optional<CardAuthorization> findByCardRequestRef(String cardRequestRef);
+    Optional<CardAuthorization> findByCaptureCardRequestRef(String captureCardRequestRef);
     List<CardAuthorization> findByCaptureStatusIn(List<CardCaptureStatus> statuses);
 
-    @Query("SELECT a.authIdempotentKey FROM CardAuthorization a WHERE a.authStatus = :status")
-    List<String> findAuthIdempotentKeysByStatus(@Param("status") CardAuthStatus status);
+    @Query("SELECT a.cardRequestRef FROM CardAuthorization a WHERE a.authStatus = :status")
+    List<String> findAuthCardRequestRefsByStatus(@Param("status") CardAuthStatus status);
 
-    @Query("SELECT a.captureIdempotentKey FROM CardAuthorization a WHERE a.captureStatus = :status AND a.captureIdempotentKey IS NOT NULL")
-    List<String> findCaptureIdempotentKeysByStatus(@Param("status") CardCaptureStatus status);
+    @Query("SELECT a.captureCardRequestRef FROM CardAuthorization a WHERE a.captureStatus = :status AND a.captureCardRequestRef IS NOT NULL")
+    List<String> findCaptureCardRequestRefsByStatus(@Param("status") CardCaptureStatus status);
 
 }

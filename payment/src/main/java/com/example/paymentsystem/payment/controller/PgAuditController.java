@@ -18,13 +18,13 @@ public class PgAuditController {
 
     @GetMapping("/auth-keys")
     public List<String> authKeys() {
-        return txRepository.findIdempotentKeysByTypeAndStatus(
+        return txRepository.findCardRequestRefsByTypeAndStatus(
                 TransactionType.AUTH, TransactionStatus.SUCCEEDED);
     }
 
     @GetMapping("/capture-keys")
     public List<String> captureKeys() {
-        return txRepository.findIdempotentKeysByTypeAndStatus(
+        return txRepository.findCardRequestRefsByTypeAndStatus(
                 TransactionType.CAPTURE, TransactionStatus.SUCCEEDED);
     }
 }

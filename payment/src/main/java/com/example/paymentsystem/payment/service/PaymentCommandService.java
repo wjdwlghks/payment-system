@@ -40,12 +40,10 @@ public class PaymentCommandService {
         );
         paymentIntentRepository.save(paymentIntent);
 
-        String authIdempotentKey = paymentIntent.getPaymentKey() + ":auth";
         PaymentTransaction transaction = new PaymentTransaction(
                 paymentIntent,
                 TransactionType.AUTH,
-                request.amount(),
-                authIdempotentKey
+                request.amount()
         );
 
         paymentTransactionRepository.save(transaction);
@@ -57,7 +55,6 @@ public class PaymentCommandService {
                 paymentIntent.getOrderId(),
                 paymentIntent.getMerchantId(),
                 paymentIntent.getAmount(),
-                transaction.getIdempotentKey(),
                 transaction.getCardRequestRef()
         );
     }
@@ -140,8 +137,7 @@ public class PaymentCommandService {
         PaymentTransaction transaction = new PaymentTransaction(
                 paymentIntent,
                 TransactionType.FDS,
-                paymentIntent.getAmount(),
-                paymentIntent.getPaymentKey() + ":fds"
+                paymentIntent.getAmount()
         );
 
         paymentTransactionRepository.save(transaction);
@@ -153,7 +149,7 @@ public class PaymentCommandService {
                 paymentIntent.getOrderId(),
                 paymentIntent.getMerchantId(),
                 paymentIntent.getAmount(),
-                transaction.getIdempotentKey()
+                transaction.getCardRequestRef()
         );
     }
 
@@ -224,7 +220,6 @@ public class PaymentCommandService {
         PaymentIntent paymentIntent = getPaymentIntent(paymentKey);
         paymentIntent.markCaptureRequested();
 
-        String captureIdempotentKey = paymentIntent.getPaymentKey() + ":capture";
         PaymentTransaction authTransaction = paymentTransactionRepository
                 .findByPaymentIntentAndTypeAndStatus(
                         paymentIntent,
@@ -236,8 +231,7 @@ public class PaymentCommandService {
         PaymentTransaction captureTransaction = new PaymentTransaction(
                 paymentIntent,
                 TransactionType.CAPTURE,
-                paymentIntent.getAmount(),
-                captureIdempotentKey
+                paymentIntent.getAmount()
         );
 
         paymentTransactionRepository.save(captureTransaction);
@@ -249,7 +243,6 @@ public class PaymentCommandService {
                 paymentIntent.getPaymentKey(),
                 paymentIntent.getOrderId(),
                 paymentIntent.getAmount(),
-                captureIdempotentKey,
                 captureTransaction.getCardRequestRef(),
                 paymentIntent.getCardCompany()
         );

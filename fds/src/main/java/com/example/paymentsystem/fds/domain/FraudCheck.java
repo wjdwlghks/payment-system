@@ -24,14 +24,11 @@ public class FraudCheck {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "idempotency_key", nullable = false, length = 150)
-    private String idempotencyKey;
+    @Column(name = "request_ref", nullable = false, length = 100, unique = true)
+    private String requestRef;
 
     @Column(name = "fds_id", nullable = false, length = 100, unique = true)
     private String fdsId;
-
-    @Column(nullable = false, length = 64)
-    private String hash;
 
     @Column(name = "payment_key", nullable = false, length = 100)
     private String paymentKey;
@@ -46,10 +43,9 @@ public class FraudCheck {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    public FraudCheck(String idempotencyKey, String fdsId, String hash, String paymentKey, Long amount, FraudDecision decision) {
-        this.idempotencyKey = idempotencyKey;
+    public FraudCheck(String requestRef, String fdsId, String paymentKey, Long amount, FraudDecision decision) {
+        this.requestRef = requestRef;
         this.fdsId = fdsId;
-        this.hash = hash;
         this.paymentKey = paymentKey;
         this.amount = amount;
         this.decision = decision;

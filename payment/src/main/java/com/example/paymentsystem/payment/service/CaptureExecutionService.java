@@ -18,7 +18,6 @@ public class CaptureExecutionService {
 
     public PaymentResponse captureWithRetry(CaptureRequestContext captureContext) {
         CardCaptureRequest captureRequest = new CardCaptureRequest(
-                captureContext.idempotentKey(),
                 captureContext.cardRequestRef(),
                 captureContext.orderId(),
                 captureContext.amount()

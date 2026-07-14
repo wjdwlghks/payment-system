@@ -43,9 +43,6 @@ public class PaymentTransaction {
     @Column(nullable = false)
     private Long amount;
 
-    @Column(name = "idempotent_key")
-    private String idempotentKey;
-
     @Column(name = "external_id", length = 100)
     private String externalId;
 
@@ -61,13 +58,11 @@ public class PaymentTransaction {
     public PaymentTransaction(
             PaymentIntent paymentIntent,
             TransactionType type,
-            Long amount,
-            String idempotentKey
+            Long amount
     ) {
         this.paymentIntent = paymentIntent;
         this.type = type;
         this.amount = amount;
-        this.idempotentKey = idempotentKey;
         this.status = TransactionStatus.REQUESTED;
         this.cardRequestRef = "pg-" + UUID.randomUUID();
     }

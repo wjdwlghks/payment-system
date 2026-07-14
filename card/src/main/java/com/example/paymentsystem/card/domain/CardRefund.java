@@ -27,9 +27,6 @@ public class CardRefund {
     @Column(name = "refund_id", nullable = false, length = 100, unique = true)
     private String refundId;
 
-    @Column(name = "refund_idempotent_key", nullable = false, length = 150, unique = true)
-    private String refundIdempotentKey;
-
     @Column(name = "card_request_ref", nullable = false, length = 100, unique = true)
     private String cardRequestRef;
 
@@ -49,9 +46,8 @@ public class CardRefund {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    public CardRefund(String refundId, String refundIdempotentKey, String cardRequestRef, String captureId, Long amount, CardRefundStatus status, Instant refundedAt) {
+    public CardRefund(String refundId, String cardRequestRef, String captureId, Long amount, CardRefundStatus status, Instant refundedAt) {
         this.refundId = refundId;
-        this.refundIdempotentKey = refundIdempotentKey;
         this.cardRequestRef = cardRequestRef;
         this.captureId = captureId;
         this.amount = amount;

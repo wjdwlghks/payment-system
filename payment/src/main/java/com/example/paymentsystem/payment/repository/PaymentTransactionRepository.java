@@ -149,8 +149,8 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
 
     long countByStatusAndUpdatedAtBefore(TransactionStatus status, Instant updatedAtBefore);
 
-    @Query("SELECT t.idempotentKey FROM PaymentTransaction t WHERE t.type = :type AND t.status = :status")
-    List<String> findIdempotentKeysByTypeAndStatus(
+    @Query("SELECT t.cardRequestRef FROM PaymentTransaction t WHERE t.type = :type AND t.status = :status")
+    List<String> findCardRequestRefsByTypeAndStatus(
             @Param("type") TransactionType type,
             @Param("status") TransactionStatus status
     );

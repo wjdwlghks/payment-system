@@ -58,8 +58,7 @@ public class RefundCommandService {
         PaymentTransaction refundTx = new PaymentTransaction(
                 paymentIntent,
                 TransactionType.REFUND,
-                request.amount(),
-                request.refundKey()
+                request.amount()
         );
 
         PaymentTransaction savedTx = paymentTransactionRepository.save(refundTx);

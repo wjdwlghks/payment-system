@@ -18,11 +18,11 @@ public class CardAuditController {
 
     @GetMapping("/auth-keys")
     public List<String> authKeys() {
-        return authorizationRepository.findAuthIdempotentKeysByStatus(CardAuthStatus.SUCCESS);
+        return authorizationRepository.findAuthCardRequestRefsByStatus(CardAuthStatus.SUCCESS);
     }
 
     @GetMapping("/capture-keys")
     public List<String> captureKeys() {
-        return authorizationRepository.findCaptureIdempotentKeysByStatus(CardCaptureStatus.SUCCESS);
+        return authorizationRepository.findCaptureCardRequestRefsByStatus(CardCaptureStatus.SUCCESS);
     }
 }

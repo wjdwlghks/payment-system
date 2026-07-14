@@ -28,9 +28,9 @@ public class FraudCheckController {
                 .body(result.body());
     }
 
-    @GetMapping("/inquiries/{idempotencyKey}")
-    public ResponseEntity<String> inquire(@PathVariable String idempotencyKey) {
-        FdsApiResult result = fraudCheckService.inquire(idempotencyKey);
+    @GetMapping("/inquiries/{requestRef}")
+    public ResponseEntity<String> inquire(@PathVariable String requestRef) {
+        FdsApiResult result = fraudCheckService.inquire(requestRef);
         return ResponseEntity.status(result.statusCode())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.body());
