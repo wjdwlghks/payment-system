@@ -2,7 +2,6 @@ package com.example.paymentsystem.payment.controller;
 
 import com.example.paymentsystem.payment.component.RecoveryCounter;
 import com.example.paymentsystem.payment.component.RecoveryCounter.InquirySnapshot;
-import com.example.paymentsystem.payment.component.RecoveryCounter.RetrySnapshot;
 import com.example.paymentsystem.payment.repository.ReconBatchRepository;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +23,7 @@ public class RecoveryMetricsController {
     public RecoveryMetricsResponse get() {
         RecoveryCounter.Snapshot snapshot = recoveryCounter.snapshot();
         long autoResolved = reconBatchRepository.sumAutoResolvedCount();
-        return new RecoveryMetricsResponse(snapshot.retry(), snapshot.inquiry(), autoResolved);
+        return new RecoveryMetricsResponse(snapshot.inquiry(), autoResolved);
     }
 
     @PostMapping("/reset")
@@ -34,7 +33,6 @@ public class RecoveryMetricsController {
     }
 
     public record RecoveryMetricsResponse(
-            Map<String, RetrySnapshot> retry,
             Map<String, InquirySnapshot> inquiry,
             long reconAutoResolved
     ) {}

@@ -12,13 +12,16 @@
 # failure_type=all 등록 위치:
 #   auth    : CONNECT_FAILURE → payment(card_auth)
 #             TIMEOUT_BEFORE/AFTER, ERROR_500 → card(auth)
-#   fds     : TIMEOUT_BEFORE/AFTER, ERROR_500 → fds(fds_check)  ※ CONNECT_FAILURE 제외
+#   fds     : CONNECT_FAILURE → payment(fds_check)
+#             TIMEOUT_BEFORE/AFTER, ERROR_500 → fds(fds_check)
 #   capture : CONNECT_FAILURE → payment(card_capture)
 #             TIMEOUT_BEFORE/AFTER, ERROR_500 → card(capture)
 #
 # 단일 failure_type 등록 위치:
 #   CONNECT_FAILURE          → payment 서버 (FailureSimulationInterceptor)
 #   TIMEOUT_*/ERROR_500      → card/fds 서버 (FailureFilter)
+#
+# 재시도는 없다: CONNECT_FAILURE 포함 모든 모호한 실패는 UNKNOWN→inquiry로 복구된다.
 
 set -euo pipefail
 
@@ -95,10 +98,10 @@ register_auth_all() {
 }
 
 register_fds_all() {
-  # CONNECT_FAILURE 제외 — inquiry 메커니즘 검증엔 불필요
-  register_fds fds_check TIMEOUT_BEFORE_PROCESS
-  register_fds fds_check TIMEOUT_AFTER_PROCESS
-  register_fds fds_check ERROR_500
+  register_payment fds_check CONNECT_FAILURE
+  register_fds     fds_check TIMEOUT_BEFORE_PROCESS
+  register_fds     fds_check TIMEOUT_AFTER_PROCESS
+  register_fds     fds_check ERROR_500
 }
 
 register_capture_all() {

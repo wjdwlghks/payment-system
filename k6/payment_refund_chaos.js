@@ -34,7 +34,7 @@ const REMAINING = 9999;
 
 // ── 장애 룰 등록 헬퍼 ────────────────────────────────────────
 // serverFailures: 카드/FDS 서버에 주입 (TIMEOUT_BEFORE, TIMEOUT_AFTER, ERROR_500)
-// connectFailure: payment RestClient에 주입 (CONNECT_FAILURE) → retry 대상
+// connectFailure: payment RestClient에 주입 (CONNECT_FAILURE) → UNKNOWN→inquiry 대상 (재시도 없음)
 function injectServerFailures(baseUrl, endpoint) {
   ['TIMEOUT_BEFORE_PROCESS', 'TIMEOUT_AFTER_PROCESS', 'ERROR_500'].forEach(failure => {
     http.post(`${baseUrl}/admin/failure`, JSON.stringify({
@@ -68,7 +68,7 @@ export const options = {
 
 // ── setup: 전 단계 장애 주입 ─────────────────────────────────
 // 서버 장애(TIMEOUT_BEFORE, TIMEOUT_AFTER, ERROR_500): 카드/FDS 서버에 주입
-// CONNECT_FAILURE: payment RestClient 인터셉터에 주입 → Resilience4j retry 3회 대상
+// CONNECT_FAILURE: payment RestClient 인터셉터에 주입 → 재시도 없이 UNKNOWN→inquiry로 수렴
 export function setup() {
   [CARD_A, CARD_B].forEach(card => {
     injectServerFailures(card, 'auth');
@@ -194,7 +194,7 @@ export function handleSummary(data) {
   const totalCapture = get('capture_ok') + get('capture_unknown') + get('capture_fail');
   const totalRefund  = get('refund_ok')  + get('refund_unknown')  + get('refund_fail');
 
-  // retry / inquiry 메트릭 조회
+  // inquiry 메트릭 조회 (재시도 제거됨 — 모든 모호한 결과는 UNKNOWN→inquiry로 복구)
   const recovery = http.get(`${PAYMENT}/admin/metrics/recovery`).json();
 
   console.log('\n========= Chaos Test Summary =========');
@@ -202,13 +202,6 @@ export function handleSummary(data) {
   console.log(`FDS      total=${totalFds}   ok=${get('fds_ok')}   unknown=${get('fds_unknown')}  fail=${get('fds_fail')}`);
   console.log(`Capture  total=${totalCapture}  ok=${get('capture_ok')}  unknown=${get('capture_unknown')}  fail=${get('capture_fail')}`);
   console.log(`Refund   total=${totalRefund}   ok=${get('refund_ok')}   unknown=${get('refund_unknown')}  fail=${get('refund_fail')}`);
-
-  console.log('\n--- Retry Stats ---');
-  for (const [name, s] of Object.entries(recovery.retry)) {
-    if (s.attempts > 0) {
-      console.log(`  ${name}: attempts=${s.attempts}  succeededAfterRetry=${s.succeededAfterRetry}  failedAfterRetry=${s.failedAfterRetry}`);
-    }
-  }
 
   console.log('\n--- Inquiry Stats ---');
   for (const [type, s] of Object.entries(recovery.inquiry)) {
