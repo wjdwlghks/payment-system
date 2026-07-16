@@ -27,11 +27,11 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             Instant updatedAtBefore
     );
 
-    @Query("SELECT t FROM PaymentTransaction t JOIN FETCH t.paymentIntent WHERE t.status = :status ORDER BY t.updatedAt ASC LIMIT 30")
-    List<PaymentTransaction> findTop30WithIntentByStatusOrderByUpdatedAtAsc(@Param("status") TransactionStatus status);
+    @Query("SELECT t FROM PaymentTransaction t JOIN FETCH t.paymentIntent WHERE t.status = :status ORDER BY t.updatedAt ASC LIMIT 300")
+    List<PaymentTransaction> findTop300WithIntentByStatusOrderByUpdatedAtAsc(@Param("status") TransactionStatus status);
 
-    @Query("SELECT t FROM PaymentTransaction t JOIN FETCH t.paymentIntent WHERE t.status = :status AND t.updatedAt < :before ORDER BY t.updatedAt ASC LIMIT 30")
-    List<PaymentTransaction> findTop30WithIntentByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
+    @Query("SELECT t FROM PaymentTransaction t JOIN FETCH t.paymentIntent WHERE t.status = :status AND t.updatedAt < :before ORDER BY t.updatedAt ASC LIMIT 300")
+    List<PaymentTransaction> findTop300WithIntentByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
             @Param("status") TransactionStatus status,
             @Param("before") Instant before
     );

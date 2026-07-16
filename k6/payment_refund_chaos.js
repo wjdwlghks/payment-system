@@ -28,9 +28,12 @@ const CARD_B  = __ENV.CARD_B  || 'http://localhost:8085';
 const FDS     = __ENV.FDS     || 'http://localhost:8083';
 
 const JSON_HDR = { headers: { 'Content-Type': 'application/json' } };
-// 4개 룰 × triggerProbability=0.027 → 단계별 장애율 ~10%, 전체 iteration 장애 경험률 ~30%
-const PROB      = 0.027;
+// 4개 룰 × triggerProbability=0.027(기본) → 단계별 장애율 ~10%, 전체 iteration 장애 경험률 ~30%
+const PROB      = parseFloat(__ENV.PROB) || 0.027;
 const REMAINING = 9999;
+
+const VUS      = parseInt(__ENV.VUS)      || 50;
+const DURATION = __ENV.DURATION           || '2m';
 
 // ── 장애 룰 등록 헬퍼 ────────────────────────────────────────
 // serverFailures: 카드/FDS 서버에 주입 (TIMEOUT_BEFORE, TIMEOUT_AFTER, ERROR_500)
@@ -60,8 +63,8 @@ export const options = {
   scenarios: {
     chaos: {
       executor: 'constant-vus',
-      vus: 50,
-      duration: '2m',
+      vus: VUS,
+      duration: DURATION,
     },
   },
 };

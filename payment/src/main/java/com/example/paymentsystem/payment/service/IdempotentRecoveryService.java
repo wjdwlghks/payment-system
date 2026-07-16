@@ -32,7 +32,7 @@ public class IdempotentRecoveryService {
     public List<IdempotencyKey> getStaleProcessing() {
         Instant threshold = Instant.now().minus(STALE_PROCESSING_THRESHOLD);
         return idempotencyKeyRepository
-                .findTop30ByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
+                .findTop300ByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
                         IdempotentStatus.PROCESSING,
                         threshold
                 );

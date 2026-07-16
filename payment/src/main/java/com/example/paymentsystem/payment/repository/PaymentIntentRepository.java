@@ -12,7 +12,7 @@ public interface PaymentIntentRepository extends JpaRepository<PaymentIntent, Lo
 
     Optional<PaymentIntent> findByMerchantIdAndOrderId(String merchantId, String orderId);
 
-    List<PaymentIntent> findTop30ByStatusOrderByUpdatedAtAsc(PaymentIntentStatus status);
+    List<PaymentIntent> findTop300ByStatusOrderByUpdatedAtAsc(PaymentIntentStatus status);
 
     long countByStatus(PaymentIntentStatus status);
 }

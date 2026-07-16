@@ -22,8 +22,9 @@
   환불은 `POST /v1/payment/refund`, 승인/매입 취소는 `POST /v1/payment/{key}/cancel`.
 
 - **UNKNOWN 상태 + 자동 복구** — 외부 호출 응답이 유실되면 성공/실패로 단정하지 않고
-  UNKNOWN으로 둔다. 스케줄러가 카드사에 재조회(inquiry)하거나 재시도(retry)해서
-  SUCCEEDED/FAIL로 확정한다. 모든 상태 전이는 멱등하게 처리되어 중복 실행에 안전하다.
+  UNKNOWN으로 둔다. 스케줄러가 결제/환불 요청 시 발급한 매칭 키(`cardRequestRef`)로
+  카드사/FDS에 재조회(inquiry)해서 SUCCEEDED/FAIL로 확정한다. 모든 상태 전이는 멱등하게
+  처리되어 중복 실행에 안전하다.
 
 - **Append-only 원장** — 매입/환불 시 계정 잔액을 직접 UPDATE하지 않고 원장 항목만
   INSERT한다. 배경 스케줄러가 주기적으로 잔액 스냅샷을 갱신해, 핫 계정 row의 락 경합을
@@ -54,11 +55,31 @@ curl http://localhost:8082/admin/verify/ledger        # 복식부기 균형 + �
 
 ## 테스트 — 결제+환불 카오스 (장애 환경 정합성 검증)
 
-결제와 환불을 10:3 비율로 발생시키면서, 모든 외부 호출 단계(auth/fds/capture/refund)에
-4종 장애(응답 지연, 응답 유실, 500 에러, 연결 실패)를 확률적으로 주입한다. 장애가 섞여도
-모든 UNKNOWN이 복구되어 최종 원장이 일치하는지 검증한다.
+결제와 환불을 10:3 비율로 발생시키면서, auth/fds/capture 세 호출 지점에 4종 장애(응답 지연
+전/후 유실, 500 에러, connect 실패)를 요청마다 독립적으로 균일 확률로 랜덤 주입한다. 장애가
+섞여도 모든 UNKNOWN이 복구되어 다음 4계층 정합성이 유지되는지 검증한다.
+
+1. **PG 내부 불변식** — UNKNOWN 잔존/원장 소스 누락/멱등키 고착 등
+2. **PG↔카드사 exactly-once** — `cardRequestRef` 집합 대사(이중/고아 청구가 없는지)
+3. **원장 복식부기 균형**
+4. **정산파일 재조정** — 카드사가 독립 생성한 정산 CSV와의 5-case 대사
 
 [k6](https://k6.io)가 필요하다.
+
+### 한 번에 실행 (권장)
+
+DB 초기화 → 부하+장애 주입 → 수렴 대기 → 정합성 4계층 검증까지 자동 수행한다.
+
+```bash
+./scripts/run-payment-refund-chaos.sh              # 기본값: 확률 0.027, 50 VU, 2분
+./scripts/run-payment-refund-chaos.sh 0.05 50 3m   # [확률] [VU] [기간]
+```
+
+결과는 `results/*_payment_refund_chaos_consistency_*.json`에 저장되며, 4계층이 전부
+통과해야 `passed: true`. `reference_post_convergence_inquiry` 필드는 수렴 완료 후
+inquiry 누적 통계(참고용, 판정에는 사용하지 않음)를 담는다.
+
+### 수동 단계별 실행
 
 ```bash
 # 1. 서비스 기동
@@ -76,4 +97,4 @@ curl http://localhost:8082/admin/verify/ledger
 ```
 
 ## 상세 기술
-- https://silent-hail-00b.notion.site/Payment-system-37d85313ee8b8064a960d0337b00dcfe?pvs=74
+- https://silent-hail-00b.notion.site/PG-39d85313ee8b808b9f30c34da11946c9

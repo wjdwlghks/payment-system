@@ -40,14 +40,14 @@ public class InquiryService {
     @Transactional(readOnly = true)
     public List<PaymentTransaction> getUnknowns() {
         return paymentTransactionRepository
-                .findTop30WithIntentByStatusOrderByUpdatedAtAsc(TransactionStatus.UNKNOWN);
+                .findTop300WithIntentByStatusOrderByUpdatedAtAsc(TransactionStatus.UNKNOWN);
     }
 
     @Transactional(readOnly = true)
     public List<PaymentTransaction> getStaleRequested() {
         Instant threshold = Instant.now().minus(STALE_REQUESTED_THRESHOLD);
         return paymentTransactionRepository
-                .findTop30WithIntentByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
+                .findTop300WithIntentByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
                         TransactionStatus.REQUESTED,
                         threshold
                 );

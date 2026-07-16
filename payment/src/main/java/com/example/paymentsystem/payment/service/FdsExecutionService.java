@@ -27,7 +27,7 @@ public class FdsExecutionService {
 
     @Transactional(readOnly = true)
     public List<PaymentIntent> getAuthReadyPaymentIntents() {
-        return paymentIntentRepository.findTop30ByStatusOrderByUpdatedAtAsc(PaymentIntentStatus.AUTH_READY);
+        return paymentIntentRepository.findTop300ByStatusOrderByUpdatedAtAsc(PaymentIntentStatus.AUTH_READY);
     }
 
     public void checkFds(PaymentIntent paymentIntent) {
