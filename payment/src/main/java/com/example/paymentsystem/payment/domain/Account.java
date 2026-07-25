@@ -73,7 +73,7 @@ public class Account {
 
     public long computeNetDelta(long debitSum, long creditSum) {
         return switch (accountClass) {
-            case ASSET -> debitSum - creditSum;
+            case ASSET, EXPENSE -> debitSum - creditSum;
             case LIABILITY, REVENUE -> creditSum - debitSum;
         };
     }
@@ -93,7 +93,7 @@ public class Account {
 
     private Long signedAmount(LedgerDirection direction, Long amount) {
         return switch (accountClass) {
-            case ASSET -> direction == LedgerDirection.DEBIT ? amount : -amount;
+            case ASSET, EXPENSE -> direction == LedgerDirection.DEBIT ? amount : -amount;
             case LIABILITY, REVENUE -> direction == LedgerDirection.CREDIT ? amount : -amount;
         };
     }

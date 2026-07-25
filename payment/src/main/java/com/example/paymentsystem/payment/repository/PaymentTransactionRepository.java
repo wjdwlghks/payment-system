@@ -78,53 +78,6 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
 
     @Query("""
     select t
-    from ClearingBatchItem item
-    join item.transaction t
-    join item.batch batch
-    where t.status = :txStatus
-      and t.type = :type
-      and batch.status = :batchStatus
-      and not exists (
-          select 1
-          from SettlementRunItem item
-          where item.captureTransaction = t
-      )
-    order by t.updatedAt asc
-""")
-    List<PaymentTransaction> findOldestClearedTransactions(
-            @Param("txStatus") TransactionStatus txStatus,
-            @Param("type") TransactionType type,
-            @Param("batchStatus") ClearingBatchStatus batchStatus,
-            Pageable pageable
-    );
-
-    @Query("""
-    select t
-    from ClearingBatchItem item
-    join item.transaction t
-    join item.batch batch
-    where t.status = :txStatus
-      and t.type = :type
-      and batch.status = :batchStatus
-      and t.updatedAt >= :windowStart
-      and t.updatedAt < :windowEnd
-      and not exists (
-          select 1
-          from SettlementRunItem item
-          where item.captureTransaction = t
-      )
-    order by t.updatedAt asc
-""")
-    List<PaymentTransaction> findClearedTransactions(
-            @Param("txStatus") TransactionStatus txStatus,
-            @Param("type") TransactionType type,
-            @Param("batchStatus") ClearingBatchStatus batchStatus,
-            @Param("windowStart") Instant windowStart,
-            @Param("windowEnd") Instant windowEnd
-    );
-
-    @Query("""
-    select t
     from PaymentTransaction t
     where t.type in :types
       and t.status in :statuses

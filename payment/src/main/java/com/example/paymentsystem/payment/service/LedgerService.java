@@ -57,7 +57,6 @@ public class LedgerService {
 
         Account cardReceivable = globalAccount(AccountType.CARD_NETWORK_RECEIVABLE);
         Account merchantPending = merchantAccount(AccountType.MERCHANT_PENDING, merchantId);
-        Account merchantAvailable = merchantAccount(AccountType.MERCHANT_AVAILABLE, merchantId);
         Account feeRevenue = globalAccount(AccountType.FEE_REVENUE);
 
         long refundAmount = transaction.getAmount();
@@ -83,15 +82,10 @@ public class LedgerService {
         intent.addFeeRefunded(proportionalFee);
 
         long merchantBurden = refundAmount - proportionalFee;
-        long takeFromPending = Math.clamp(getBalanceNow(merchantPending), 0L, merchantBurden);
-        long takeFromAvailable = merchantBurden - takeFromPending;
 
         List<LedgerEntry> entries = new ArrayList<>();
-        if (takeFromPending > 0) {
-            entries.add(new LedgerEntry(merchantPending, LedgerDirection.DEBIT, takeFromPending, LedgerEntryType.REFUND));
-        }
-        if (takeFromAvailable > 0) {
-            entries.add(new LedgerEntry(merchantAvailable, LedgerDirection.DEBIT, takeFromAvailable, LedgerEntryType.REFUND));
+        if (merchantBurden > 0) {
+            entries.add(new LedgerEntry(merchantPending, LedgerDirection.DEBIT, merchantBurden, LedgerEntryType.REFUND));
         }
         if (proportionalFee > 0) {
             entries.add(new LedgerEntry(feeRevenue, LedgerDirection.DEBIT, proportionalFee, LedgerEntryType.REFUND));
@@ -101,43 +95,50 @@ public class LedgerService {
         post(LedgerPostingType.REFUND, sourceType, refundTransactionId.toString(), entries);
     }
 
+    // CLEARING: 카드사와 대사(reconciliation)가 끝난 net 금액에서 카드사 매입 수수료만 확정 반영.
+    // 은행 계좌 입금은 SETTLEMENT의 몫이라 여기서는 CARD_NETWORK_RECEIVABLE을 건드리지 않는다.
     @Transactional(propagation = Propagation.MANDATORY)
-    public void postClearing(Long batchId, Long totalAmount) {
+    public void postClearing(Long batchId, Long fileNet) {
+        Account cardNetworkFee = globalAccount(AccountType.CARD_NETWORK_FEE);
         Account cardReceivable = globalAccount(AccountType.CARD_NETWORK_RECEIVABLE);
-        Account bank = globalAccount(AccountType.BANK_ACCOUNT);
+
+        long fee = calculateCardNetworkFee(fileNet);
 
         List<LedgerEntry> entries = new ArrayList<>();
-        entries.add(new LedgerEntry(cardReceivable, LedgerDirection.CREDIT, totalAmount, LedgerEntryType.CLEARING));
-        entries.add(new LedgerEntry(bank, LedgerDirection.DEBIT, totalAmount, LedgerEntryType.CLEARING));
+        if (fee > 0) {
+            entries.add(new LedgerEntry(cardNetworkFee, LedgerDirection.DEBIT, fee, LedgerEntryType.CLEARING));
+            entries.add(new LedgerEntry(cardReceivable, LedgerDirection.CREDIT, fee, LedgerEntryType.CLEARING));
+        }
 
         post(LedgerPostingType.CLEARING, LedgerSourceType.CLEARING_BATCH, batchId.toString(), entries);
     }
 
+    // SETTLEMENT: 카드사 → PG 실제 입금. CLEARED된 배치별로 (총액 - 카드사수수료) 순액이 은행 계좌에 반영된다.
     @Transactional(propagation = Propagation.MANDATORY)
-    public void postSettlement(Long runId, List<PaymentTransaction> transactions) {
+    public void postSettlement(Long runId, List<ClearingBatch> batches) {
+        Account cardReceivable = globalAccount(AccountType.CARD_NETWORK_RECEIVABLE);
+        Account bank = globalAccount(AccountType.BANK_ACCOUNT);
+
         List<LedgerEntry> entries = new ArrayList<>();
+        for (ClearingBatch batch : batches) {
+            long fee = calculateCardNetworkFee(batch.getTotalAmount());
+            long net = batch.getTotalAmount() - fee;
 
-        for (PaymentTransaction transaction : transactions) {
-            String merchantId = transaction.getPaymentIntent().getMerchantId();
-            Account merchantPending = merchantAccount(AccountType.MERCHANT_PENDING, merchantId);
-            Account merchantAvailable = merchantAccount(AccountType.MERCHANT_AVAILABLE, merchantId);
-
-            long net = transaction.getAmount() - calculateFee(transaction.getAmount());
-
-            entries.add(new LedgerEntry(merchantPending, LedgerDirection.DEBIT, net, LedgerEntryType.SETTLEMENT));
-            entries.add(new LedgerEntry(merchantAvailable, LedgerDirection.CREDIT, net, LedgerEntryType.SETTLEMENT));
+            entries.add(new LedgerEntry(bank, LedgerDirection.DEBIT, net, LedgerEntryType.SETTLEMENT));
+            entries.add(new LedgerEntry(cardReceivable, LedgerDirection.CREDIT, net, LedgerEntryType.SETTLEMENT));
         }
 
         post(LedgerPostingType.SETTLEMENT, LedgerSourceType.SETTLEMENT_RUN, runId.toString(), entries);
     }
 
+    // PAYOUT: PG → 가맹점 실제 송금. 가맹점 계좌는 PENDING/AVAILABLE 구분 없이 단일 계좌.
     @Transactional(propagation = Propagation.MANDATORY)
     public void postPayout(Long payoutId, String merchantId, Long amount) {
-        Account merchantAvailable = merchantAccount(AccountType.MERCHANT_AVAILABLE, merchantId);
+        Account merchantPending = merchantAccount(AccountType.MERCHANT_PENDING, merchantId);
         Account bank = globalAccount(AccountType.BANK_ACCOUNT);
 
         List<LedgerEntry> entries = new ArrayList<>();
-        entries.add(new LedgerEntry(merchantAvailable, LedgerDirection.DEBIT, amount, LedgerEntryType.PAYOUT));
+        entries.add(new LedgerEntry(merchantPending, LedgerDirection.DEBIT, amount, LedgerEntryType.PAYOUT));
         entries.add(new LedgerEntry(bank, LedgerDirection.CREDIT, amount, LedgerEntryType.PAYOUT));
 
         post(LedgerPostingType.PAYOUT, LedgerSourceType.PAYOUT_REQUEST, payoutId.toString(), entries);
@@ -167,13 +168,6 @@ public class LedgerService {
         ledgerRepository.saveAll(entries);
     }
 
-    // snapshot + unapplied 합산으로 현재 잔액 근사치 반환
-    private long getBalanceNow(Account account) {
-        long debit = ledgerRepository.sumUnappliedByDirection(account.getId(), LedgerDirection.DEBIT);
-        long credit = ledgerRepository.sumUnappliedByDirection(account.getId(), LedgerDirection.CREDIT);
-        return account.getBalance() + account.computeNetDelta(debit, credit);
-    }
-
     private Account globalAccount(AccountType type) {
         return accountRepository.findByAccountTypeAndMerchantId(type, GLOBAL).orElseThrow();
     }
@@ -192,6 +186,12 @@ public class LedgerService {
 
     private long calculateFee(long amount) {
         long numerator = Math.multiplyExact(amount, 3L);
+        return Math.addExact(numerator, 50L) / 100L;
+    }
+
+    // 카드사가 정산 시 떼어가는 매입 수수료율(임의값 1%) — PG-가맹점 수수료(calculateFee)와는 별개 축.
+    private long calculateCardNetworkFee(long amount) {
+        long numerator = Math.multiplyExact(amount, 1L);
         return Math.addExact(numerator, 50L) / 100L;
     }
 }

@@ -31,9 +31,6 @@ public class RefundRiskFlag {
     @Column(name = "pending_balance", nullable = false)
     private Long pendingBalance;
 
-    @Column(name = "available_balance", nullable = false)
-    private Long availableBalance;
-
     @Column(name = "refund_amount", nullable = false)
     private Long refundAmount;
 
@@ -44,11 +41,10 @@ public class RefundRiskFlag {
     private Instant createdAt;
 
     public RefundRiskFlag(String merchantId, Long refundTxId, Long pendingBalance,
-                          Long availableBalance, Long refundAmount, Long netPosition) {
+                          Long refundAmount, Long netPosition) {
         this.merchantId = merchantId;
         this.refundTxId = refundTxId;
         this.pendingBalance = pendingBalance;
-        this.availableBalance = availableBalance;
         this.refundAmount = refundAmount;
         this.netPosition = netPosition;
     }

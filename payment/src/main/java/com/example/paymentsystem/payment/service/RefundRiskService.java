@@ -23,12 +23,10 @@ public class RefundRiskService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void checkAndRecord(String merchantId, Long refundTxId, Long refundAmount) {
         long pendingBalance = balanceNow(AccountType.MERCHANT_PENDING, merchantId);
-        long availableBalance = balanceNow(AccountType.MERCHANT_AVAILABLE, merchantId);
-        long netPosition = pendingBalance + availableBalance;
 
-        if (netPosition < 0) {
+        if (pendingBalance < 0) {
             riskFlagRepository.save(new RefundRiskFlag(
-                    merchantId, refundTxId, pendingBalance, availableBalance, refundAmount, netPosition
+                    merchantId, refundTxId, pendingBalance, refundAmount, pendingBalance
             ));
         }
     }

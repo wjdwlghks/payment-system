@@ -2,7 +2,7 @@ package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.*;
 import com.example.paymentsystem.payment.dto.SettlementRunResponse;
-import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
+import com.example.paymentsystem.payment.repository.ClearingBatchRepository;
 import com.example.paymentsystem.payment.repository.SettlementItemRepository;
 import com.example.paymentsystem.payment.repository.SettlementRunRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +17,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,12 +30,15 @@ public class SettlementService {
     private final LedgerService ledgerService;
     private final SettlementRunRepository settlementRunRepository;
     private final SettlementItemRepository settlementItemRepository;
-    private final PaymentTransactionRepository paymentTransactionRepository;
+    private final ClearingBatchRepository clearingBatchRepository;
 
+    // 카드사 -> PG 정산(SETTLEMENT): CLEARED된 배치 중 아직 정산 안 된 것들을 모아 은행 입금을 반영한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public SettlementRunResponse settlementRun() {
-        Instant windowEnd = Instant.now().minus(10, ChronoUnit.SECONDS);
+        // ClearingBatch는 CLEARED로 전이된 뒤 다시 갱신되지 않는 불변 레코드라,
+        // PaymentTransaction 스캔 때 쓰던 10초 디바운스 버퍼가 필요 없다(clearing 직후 바로 정산해도 안전).
+        Instant windowEnd = Instant.now();
         Optional<Instant> optionalWindowStart = windowStart();
 
         if (optionalWindowStart.isEmpty()) {
@@ -45,23 +47,21 @@ public class SettlementService {
 
         Instant windowStart = optionalWindowStart.get();
 
-        List<PaymentTransaction> transactions = paymentTransactionRepository.findClearedTransactions(
-                TransactionStatus.SUCCEEDED,
-                TransactionType.CAPTURE,
+        List<ClearingBatch> batches = clearingBatchRepository.findUnsettledClearedBatches(
                 ClearingBatchStatus.CLEARED,
                 windowStart,
                 windowEnd
         );
 
-        if (transactions.isEmpty()) {
+        if (batches.isEmpty()) {
             return SettlementRunResponse.noTarget(windowStart, windowEnd);
         }
 
         long totalAmount = 0L;
         int itemCount = 0;
-        for (PaymentTransaction transaction : transactions) {
-            totalAmount += transaction.getAmount() - calculateFee(transaction.getAmount());
-            itemCount ++;
+        for (ClearingBatch batch : batches) {
+            totalAmount += batch.getTotalAmount() - calculateCardNetworkFee(batch.getTotalAmount());
+            itemCount++;
         }
 
         SettlementRun settlementRun = settlementRunRepository.save(
@@ -74,18 +74,14 @@ public class SettlementService {
                 )
         );
 
-        for (PaymentTransaction transaction : transactions) {
+        for (ClearingBatch batch : batches) {
+            long net = batch.getTotalAmount() - calculateCardNetworkFee(batch.getTotalAmount());
             settlementItemRepository.save(
-                    new SettlementRunItem(
-                            settlementRun,
-                            transaction,
-                            transaction.getPaymentIntent().getMerchantId(),
-                            transaction.getAmount() - calculateFee(transaction.getAmount())
-                    )
+                    new SettlementRunItem(settlementRun, batch, net)
             );
         }
 
-        ledgerService.postSettlement(settlementRun.getId(), transactions);
+        ledgerService.postSettlement(settlementRun.getId(), batches);
 
         settlementRun.markSettled();
 
@@ -96,19 +92,17 @@ public class SettlementService {
         return settlementRunRepository
                 .findTop1ByStatusOrderByWindowEndDesc(SettlementRunStatus.SETTLED)
                 .map(SettlementRun::getWindowEnd)
-                .or(this::oldestClearedCaptureUpdatedAt);
+                .or(this::oldestUnsettledClearedBatchAt);
     }
 
-    private Optional<Instant> oldestClearedCaptureUpdatedAt() {
-        return paymentTransactionRepository.findOldestClearedTransactions(
-                TransactionStatus.SUCCEEDED,
-                TransactionType.CAPTURE,
-                ClearingBatchStatus.CLEARED,
-                PageRequest.of(0, 1)
-        )
+    private Optional<Instant> oldestUnsettledClearedBatchAt() {
+        return clearingBatchRepository.findOldestUnsettledClearedBatches(
+                        ClearingBatchStatus.CLEARED,
+                        PageRequest.of(0, 1)
+                )
                 .stream()
                 .findFirst()
-                .map(PaymentTransaction::getUpdatedAt);
+                .map(ClearingBatch::getClearedAt);
     }
 
     private String generateRunCode() {
@@ -123,8 +117,8 @@ public class SettlementService {
         return prefix + String.format("%03d", nextSequence);
     }
 
-    private long calculateFee(long amount) {
-        long numerator = Math.multiplyExact(amount, 3L);
+    private long calculateCardNetworkFee(long amount) {
+        long numerator = Math.multiplyExact(amount, 1L);
         return Math.addExact(numerator, 50L) / 100L;
     }
 }

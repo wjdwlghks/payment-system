@@ -50,7 +50,7 @@ public class ReconciliationValidationService {
     private static final List<TransactionStatus> UNKNOWN_STATUS =
             List.of(TransactionStatus.UNKNOWN);
     private static final List<LedgerEntryType> RECON_LEDGER_TYPES =
-            List.of(LedgerEntryType.CAPTURE, LedgerEntryType.REFUND, LedgerEntryType.CLEARING);
+            List.of(LedgerEntryType.CAPTURE, LedgerEntryType.REFUND, LedgerEntryType.CLEARING, LedgerEntryType.SETTLEMENT);
 
     private final ReconBatchRepository reconBatchRepository;
     private final StagingSettlementRepository stagingSettlementRepository;

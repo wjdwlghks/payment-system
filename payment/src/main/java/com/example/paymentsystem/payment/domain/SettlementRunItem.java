@@ -29,27 +29,22 @@ public class SettlementRunItem {
     private SettlementRun run;
 
     @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "capture_tx_id", nullable = false, unique = true)
-    private PaymentTransaction captureTransaction;
-
-    @Column(name = "merchant_id", nullable = false, length = 100)
-    private String merchantId;
+    @JoinColumn(name = "clearing_batch_id", nullable = false, unique = true)
+    private ClearingBatch clearingBatch;
 
     @Column(nullable = false)
     private Long amount;
 
     public SettlementRunItem(
             SettlementRun run,
-            PaymentTransaction captureTransaction,
-            String merchantId,
+            ClearingBatch clearingBatch,
             Long amount
     ) {
         if (amount <= 0) {
             throw new IllegalArgumentException("amount must be positive");
         }
         this.run = run;
-        this.captureTransaction = captureTransaction;
-        this.merchantId = merchantId;
+        this.clearingBatch = clearingBatch;
         this.amount = amount;
     }
 }

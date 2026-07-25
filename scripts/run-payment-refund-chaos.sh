@@ -127,6 +127,18 @@ BATCH_B=$(echo "$INGEST_B" | python3 -c "import sys,json; print(json.load(sys.st
 VALIDATE_B=$(curl -sf -X POST "$PAYMENT_URL/admin/reconciliation/$BATCH_B/validate")
 log "Validate B: $VALIDATE_B"
 
+# ── 7-1. 카드사 -> PG 정산(SETTLEMENT) ──────────────────────────────────────
+log "=== 7-1. Settlement run ==="
+SETTLEMENT_RUN=$(curl -sf -X POST "$PAYMENT_URL/admin/settlement-run")
+log "Settlement run: $SETTLEMENT_RUN"
+
+# ── 7-2. PG -> 가맹점 출금(PAYOUT) ───────────────────────────────────────────
+log "=== 7-2. Payout per merchant ==="
+for i in $(seq 1 "$VUS"); do
+  MID="chaos-$(printf '%03d' "$i")"
+  curl -sf -X POST "$PAYMENT_URL/admin/payouts/$MID" >/dev/null
+done
+
 # ── 8. 정합성 계층 1: PG 내부 불변식 ─────────────────────────────────────────
 log "=== 8. Layer 1 — PG internal invariants ==="
 PG_INTERNAL=$(curl -sf "$PAYMENT_URL/admin/verify/pg-internal")

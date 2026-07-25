@@ -32,17 +32,17 @@ public class PayoutService {
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PayoutResponse payout(String merchantId) {
-        Optional<Account> optionalMerchantAvailable = accountRepository.findByAccountTypeAndMerchantId(
-                AccountType.MERCHANT_AVAILABLE,
+        Optional<Account> optionalMerchantPending = accountRepository.findByAccountTypeAndMerchantId(
+                AccountType.MERCHANT_PENDING,
                 merchantId
         );
 
-        if (optionalMerchantAvailable.isEmpty()) {
+        if (optionalMerchantPending.isEmpty()) {
             return PayoutResponse.noTarget(merchantId);
         }
 
-        Account merchantAvailable = optionalMerchantAvailable.get();
-        Long amount = merchantAvailable.getBalance();
+        Account merchantPending = optionalMerchantPending.get();
+        Long amount = merchantPending.getBalance();
 
         if (amount <= 0) {
             return PayoutResponse.noTarget(merchantId);
