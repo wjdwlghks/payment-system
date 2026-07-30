@@ -5,6 +5,7 @@ import com.example.paymentsystem.payment.client.card.CardClient;
 import com.example.paymentsystem.payment.client.card.CardRefundRequest;
 import com.example.paymentsystem.payment.client.card.CardRefundResponse;
 import com.example.paymentsystem.payment.domain.IdempotencyKey;
+import com.example.paymentsystem.payment.domain.IdempotentKeys;
 import com.example.paymentsystem.payment.domain.IdempotencyOperation;
 import com.example.paymentsystem.payment.domain.IdempotentStatus;
 import com.example.paymentsystem.payment.domain.LedgerSourceType;
@@ -29,7 +30,7 @@ public class RefundService {
 
 
     public PaymentApiResult refund(RefundRequest request) {
-        String idempotentKey = request.paymentKey() + ":refund:" + request.refundKey();
+        String idempotentKey = IdempotentKeys.paymentRefund(request.paymentKey(), request.refundKey());
         String requestHash = DigestUtils.sha256Hex(
                 request.paymentKey() + ":" + request.amount() + ":" + request.refundKey()
         );
@@ -65,15 +66,11 @@ public class RefundService {
         return externalCallExecutor.execute(
                 () -> cardClient.refund(refundContext.cardCompany(), refundContext.captureId(), cardRefundRequest),
                 response -> handleRefundResponse(idempotentKey, refundContext, response),
-                () -> completeRequest(
-                        idempotentKey,
-                        IdempotencyOperation.PAYMENT_REFUND,
-                        refundCommandService.unknownRefund(refundContext.transactionId(), refundContext.refundKey())
-                ),
-                () -> completeRequest(
-                        idempotentKey,
-                        IdempotencyOperation.PAYMENT_REFUND,
-                        refundCommandService.failRefund(refundContext.transactionId(), refundContext.refundKey(), null)
+                // UNKNOWN은 확정된 결과가 아니므로 멱등키를 완결하지 않는다 — PROCESSING을 유지한 채
+                // InquiryScheduler가 실제 상태를 확정하는 시점에 그 트랜잭션에서 완결된다.
+                () -> toApiResult(refundCommandService.unknownRefund(refundContext.transactionId(), refundContext.refundKey())),
+                () -> refundCommandService.failRefundAndComplete(
+                        refundContext.transactionId(), refundContext.refundKey(), null, idempotentKey
                 )
         );
     }
@@ -83,17 +80,16 @@ public class RefundService {
             RefundRequestContext context,
             CardRefundResponse response
     ) {
-        RefundResponse refundResponse = response.success()
-                ? refundCommandService.completeRefund(context.transactionId(), context.refundKey(), context.amount(), response.externalId(), LedgerSourceType.REFUND_TRANSACTION)
-                : refundCommandService.failRefund(context.transactionId(), context.refundKey(), response.externalId());
-
-        return completeRequest(idempotentKey, IdempotencyOperation.PAYMENT_REFUND, refundResponse);
+        return response.success()
+                ? refundCommandService.completeRefundAndComplete(
+                        context.transactionId(), context.refundKey(), context.amount(),
+                        response.externalId(), idempotentKey, LedgerSourceType.REFUND_TRANSACTION)
+                : refundCommandService.failRefundAndComplete(
+                        context.transactionId(), context.refundKey(), response.externalId(), idempotentKey);
     }
 
-    private PaymentApiResult completeRequest(String idempotentKey, IdempotencyOperation operation, RefundResponse response) {
-        String responseBody = objectMapper.writeValueAsString(response);
-        idempotentService.complete(idempotentKey, operation, 200, responseBody);
-        return new PaymentApiResult(200, responseBody);
+    private PaymentApiResult toApiResult(RefundResponse response) {
+        return new PaymentApiResult(200, objectMapper.writeValueAsString(response));
     }
 
     private PaymentApiResult completeError(String idempotentKey, IdempotencyOperation operation, int statusCode, String message) {

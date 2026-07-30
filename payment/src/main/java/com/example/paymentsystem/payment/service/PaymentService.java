@@ -7,6 +7,7 @@ import com.example.paymentsystem.payment.client.fds.FdsCheckRequest;
 import com.example.paymentsystem.payment.client.fds.FdsCheckResponse;
 import com.example.paymentsystem.payment.client.fds.FdsClient;
 import com.example.paymentsystem.payment.domain.IdempotencyKey;
+import com.example.paymentsystem.payment.domain.IdempotentKeys;
 import com.example.paymentsystem.payment.domain.IdempotencyOperation;
 import com.example.paymentsystem.payment.domain.IdempotentStatus;
 import com.example.paymentsystem.payment.domain.PaymentIntent;
@@ -32,7 +33,7 @@ public class PaymentService {
 
     public PaymentApiResult requestPayment(PaymentRequest request) {
 
-        String idempotentKey = request.merchantId() + ":" + request.orderId();
+        String idempotentKey = IdempotentKeys.paymentRequest(request.merchantId(), request.orderId());
         String requestHash = DigestUtils.sha256Hex(
                 request.merchantId() + ":" + request.orderId() + ":" + request.amount()
         );
@@ -54,7 +55,9 @@ public class PaymentService {
         return externalCallExecutor.execute(
                 () -> cardClient.authorize(request.cardCompany(), authRequest),
                 response -> handleAuthResponse(idempotentKey, authContext, response),
-                () -> paymentCommandService.unknownAuthAndComplete(authContext.transactionId(), idempotentKey),
+                // UNKNOWN은 확정된 결과가 아니므로 멱등키를 완결하지 않는다 — PROCESSING을 유지한 채
+                // InquiryScheduler가 실제 상태를 확정하는 시점에 그 트랜잭션에서 완결된다.
+                () -> toApiResult(paymentCommandService.unknownAuth(authContext.transactionId())),
                 () -> paymentCommandService.failAuthAndComplete(authContext.transactionId(), null, idempotentKey)
         );
     }
@@ -68,12 +71,12 @@ public class PaymentService {
             return errorResult(e.getStatusCode(), e.getMessage());
         } catch (DataIntegrityViolationException e) {
             PaymentIntent paymentIntent = paymentCommandService.getPaymentIntent(paymentKey);
-            String idempotentKey = paymentIntent.getMerchantId() + ":" + paymentKey;
+            String idempotentKey = IdempotentKeys.paymentConfirm(paymentIntent.getMerchantId(), paymentKey);
             String requestHash = DigestUtils.sha256Hex(idempotentKey);
             return replayOrReject(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, requestHash, "Processing confirm");
         }
 
-        String idempotentKey = captureContext.merchantId() + ":" + captureContext.paymentKey();
+        String idempotentKey = IdempotentKeys.paymentConfirm(captureContext.merchantId(), captureContext.paymentKey());
         return captureExecutionService.captureWithRetry(captureContext, idempotentKey);
     }
 
@@ -104,7 +107,7 @@ public class PaymentService {
         return externalCallExecutor.execute(
                 () -> fdsClient.check(checkRequest),
                 response -> handleFdsResponse(idempotentKey, fdsContext, response),
-                () -> paymentCommandService.unknownFdsAndComplete(fdsContext.transactionId(), idempotentKey),
+                () -> toApiResult(paymentCommandService.unknownFds(fdsContext.transactionId())),
                 () -> paymentCommandService.failFdsAndComplete(fdsContext.transactionId(), null, idempotentKey)
         );
     }
@@ -134,6 +137,10 @@ public class PaymentService {
         }
 
         return new PaymentApiResult(existing.getResponseCode(), existing.getResponseBody());
+    }
+
+    private PaymentApiResult toApiResult(PaymentResponse response) {
+        return new PaymentApiResult(200, objectMapper.writeValueAsString(response));
     }
 
     private PaymentApiResult errorResult(int statusCode, String message) {

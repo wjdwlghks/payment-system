@@ -1,6 +1,7 @@
 package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.IdempotencyKey;
+import com.example.paymentsystem.payment.domain.IdempotentKeys;
 import com.example.paymentsystem.payment.domain.IdempotencyOperation;
 import com.example.paymentsystem.payment.domain.IdempotentStatus;
 import com.example.paymentsystem.payment.domain.LedgerSourceType;
@@ -140,7 +141,8 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    // 병합 트랜잭션: failAuth + idempotent complete (동기 흐름 전용)
+    // 병합 트랜잭션: failAuth + idempotent complete.
+    // AUTH phase가 종료 상태가 되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentApiResult failAuthAndComplete(Long transactionId, String externalId, String idempotentKey) {
@@ -167,19 +169,6 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    // 병합 트랜잭션: unknownAuth + idempotent complete (동기 흐름 전용)
-    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
-    @Transactional
-    public PaymentApiResult unknownAuthAndComplete(Long transactionId, String idempotentKey) {
-        PaymentTransaction transaction = getTransaction(transactionId);
-        PaymentIntent paymentIntent = transaction.getPaymentIntent();
-        if (transaction.getStatus() == TransactionStatus.REQUESTED) {
-            paymentIntent.markAuthUnknown();
-            transaction.markUnknown();
-        }
-        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, toResponse(paymentIntent));
-    }
-
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentResponse unknownFds(Long transactionId) {
@@ -191,19 +180,6 @@ public class PaymentCommandService {
         paymentIntent.markFdsUnknown();
         transaction.markUnknown();
         return toResponse(paymentIntent);
-    }
-
-    // 병합 트랜잭션: unknownFds + idempotent complete (동기 흐름 전용)
-    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
-    @Transactional
-    public PaymentApiResult unknownFdsAndComplete(Long transactionId, String idempotentKey) {
-        PaymentTransaction transaction = getTransaction(transactionId);
-        PaymentIntent paymentIntent = transaction.getPaymentIntent();
-        if (transaction.getStatus() == TransactionStatus.REQUESTED) {
-            paymentIntent.markFdsUnknown();
-            transaction.markUnknown();
-        }
-        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, toResponse(paymentIntent));
     }
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
@@ -247,7 +223,8 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    // 병합 트랜잭션: failFds + idempotent complete (동기 흐름 전용)
+    // 병합 트랜잭션: failFds + idempotent complete.
+    // request phase가 종료되는 지점 — 동기 흐름 / inquiry / FdsScheduler가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentApiResult failFdsAndComplete(Long transactionId, String externalId, String idempotentKey) {
@@ -276,7 +253,8 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    // 병합 트랜잭션: completeFds + idempotent complete (동기 흐름 전용)
+    // 병합 트랜잭션: completeFds + idempotent complete.
+    // request phase가 종료되는 지점 — 동기 흐름 / inquiry / FdsScheduler가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentApiResult completeFdsAndComplete(Long transactionId, String externalId, String idempotentKey) {
@@ -305,7 +283,8 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    // 병합 트랜잭션: failCapture + idempotent complete (동기 흐름 전용)
+    // 병합 트랜잭션: failCapture + idempotent complete.
+    // confirm phase가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentApiResult failCaptureAndComplete(Long transactionId, String externalId, String idempotentKey) {
@@ -335,7 +314,8 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    // 병합 트랜잭션: completeCapture + idempotent complete (동기 흐름 전용)
+    // 병합 트랜잭션: completeCapture + idempotent complete.
+    // confirm phase가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentApiResult completeCaptureAndComplete(Long captureTransactionId, String externalId, String idempotentKey, LedgerSourceType sourceType) {
@@ -363,19 +343,6 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    // 병합 트랜잭션: unknownCapture + idempotent complete (동기 흐름 전용)
-    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
-    @Transactional
-    public PaymentApiResult unknownCaptureAndComplete(Long transactionId, String idempotentKey) {
-        PaymentTransaction transaction = getTransaction(transactionId);
-        PaymentIntent paymentIntent = transaction.getPaymentIntent();
-        if (transaction.getStatus() == TransactionStatus.REQUESTED) {
-            paymentIntent.markCaptureUnknown();
-            transaction.markUnknown();
-        }
-        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, toResponse(paymentIntent));
-    }
-
     // 병합 트랜잭션: PaymentIntent 조회+상태검증 + idempotency PROCESSING insert + PaymentIntent/CAPTURE TX 갱신.
     // FDS_READY가 아니면 idempotency key를 만들지 않고 PaymentValidationException(422)만 던진다.
     // 유니크 제약 위반 시 DataIntegrityViolationException이 전파되며 전체 롤백 — 호출부에서 기존 키를 재조회한다.
@@ -389,7 +356,7 @@ public class PaymentCommandService {
             throw new PaymentValidationException(422, "Payment not confirmable: status is " + paymentIntent.getStatus());
         }
 
-        String idempotentKey = paymentIntent.getMerchantId() + ":" + paymentKey;
+        String idempotentKey = IdempotentKeys.paymentConfirm(paymentIntent.getMerchantId(), paymentKey);
         String requestHash = DigestUtils.sha256Hex(idempotentKey);
 
         IdempotencyKey key = IdempotencyKey.builder()

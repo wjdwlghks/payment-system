@@ -78,7 +78,12 @@ public class IdempotencyKey {
         this.updatedAt = Instant.now();
     }
 
+    // 상태 가드 — 이미 확정된 응답은 덮어쓰지 않는다.
+    // 동기 흐름 / inquiry / 크래시 복구가 같은 키를 두고 경쟁해도 최초 확정값이 유지된다.
     public void complete(int responseCode, String responseBody) {
+        if (this.status == IdempotentStatus.COMPLETE) {
+            return;
+        }
         this.status = IdempotentStatus.COMPLETE;
         this.responseCode = responseCode;
         this.responseBody = responseBody;

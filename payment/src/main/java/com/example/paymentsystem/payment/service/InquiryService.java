@@ -7,7 +7,9 @@ import com.example.paymentsystem.payment.client.fds.FdsClient;
 import com.example.paymentsystem.payment.client.fds.FdsInquiryResponse;
 import com.example.paymentsystem.payment.component.RecoveryCounter;
 import com.example.paymentsystem.payment.domain.CardCompany;
+import com.example.paymentsystem.payment.domain.IdempotentKeys;
 import com.example.paymentsystem.payment.domain.LedgerSourceType;
+import com.example.paymentsystem.payment.domain.PaymentIntent;
 import com.example.paymentsystem.payment.domain.PaymentTransaction;
 import com.example.paymentsystem.payment.domain.Refund;
 import com.example.paymentsystem.payment.domain.TransactionStatus;
@@ -61,7 +63,8 @@ public class InquiryService {
                 () -> cardClient.inquiryAuth(company, cardRequestRef),
                 response -> handleAuthInquiry(transaction, response),
                 () -> {},
-                () -> paymentCommandService.failAuth(transaction.getId(), null)
+                () -> paymentCommandService.failAuthAndComplete(
+                        transaction.getId(), null, requestKey(transaction))
         );
     }
 
@@ -72,7 +75,8 @@ public class InquiryService {
                 () -> fdsClient.inquiry(cardRequestRef),
                 response -> handleFdsInquiry(transaction, response),
                 () -> {},
-                () -> paymentCommandService.failFds(transaction.getId(), null)
+                () -> paymentCommandService.failFdsAndComplete(
+                        transaction.getId(), null, requestKey(transaction))
         );
     }
 
@@ -84,7 +88,8 @@ public class InquiryService {
                 () -> cardClient.inquiryCapture(company, cardRequestRef),
                 response -> handleCaptureInquiry(transaction, response),
                 () -> {},
-                () -> paymentCommandService.failCapture(transaction.getId(), null)
+                () -> paymentCommandService.failCaptureAndComplete(
+                        transaction.getId(), null, confirmKey(transaction))
         );
     }
 
@@ -99,53 +104,86 @@ public class InquiryService {
                 () -> cardClient.inquiryRefund(company, cardRequestRef),
                 response -> handleRefundInquiry(transaction, refund, response),
                 () -> {},
-                () -> refundCommandService.failRefund(transaction.getId(), refundKey, null)
+                () -> refundCommandService.failRefundAndComplete(
+                        transaction.getId(), refundKey, null, refundIdempotentKey(transaction, refundKey))
         );
     }
 
     private void handleRefundInquiry(PaymentTransaction transaction, Refund refund, RefundInquiryResponse response) {
         recoveryCounter.incrementInquiryResult("refund", response.status());
+        String idempotentKey = refundIdempotentKey(transaction, refund.getRefundKey());
         switch (response.status()) {
-            case "success" -> refundCommandService.completeRefund(
-                    transaction.getId(), refund.getRefundKey(), refund.getAmount(), response.externalId(), LedgerSourceType.REFUND_TRANSACTION
+            case "success" -> refundCommandService.completeRefundAndComplete(
+                    transaction.getId(), refund.getRefundKey(), refund.getAmount(),
+                    response.externalId(), idempotentKey, LedgerSourceType.REFUND_TRANSACTION
             );
-            case "failed" -> refundCommandService.failRefund(transaction.getId(), refund.getRefundKey(), response.externalId());
-            case "not_found" -> refundCommandService.failRefund(transaction.getId(), refund.getRefundKey(), null);
+            case "failed" -> refundCommandService.failRefundAndComplete(
+                    transaction.getId(), refund.getRefundKey(), response.externalId(), idempotentKey);
+            case "not_found" -> refundCommandService.failRefundAndComplete(
+                    transaction.getId(), refund.getRefundKey(), null, idempotentKey);
             case "in_progress" -> {}
         }
     }
 
     private void handleAuthInquiry(PaymentTransaction transaction, AuthInquiryResponse response) {
         recoveryCounter.incrementInquiryResult("auth", response.status());
+        String idempotentKey = requestKey(transaction);
         switch (response.status()) {
+            // AUTH 성공은 request phase의 종료가 아니다(FDS가 남음) — 멱등키는 PROCESSING을 유지하고
+            // FdsScheduler가 FDS를 이어서 실행한 뒤 그 시점에 완결한다.
             case "success" -> paymentCommandService.completeAuth(
                     transaction.getId(),
                     response.externalId(),
                     response.authorizedAt()
             );
-            case "failed" -> paymentCommandService.failAuth(transaction.getId(), response.externalId());
-            case "not_found" -> paymentCommandService.failAuth(transaction.getId(), null);
+            case "failed" -> paymentCommandService.failAuthAndComplete(
+                    transaction.getId(), response.externalId(), idempotentKey);
+            case "not_found" -> paymentCommandService.failAuthAndComplete(
+                    transaction.getId(), null, idempotentKey);
             case "in_progress" -> {}
         }
     }
 
     private void handleFdsInquiry(PaymentTransaction transaction, FdsInquiryResponse response) {
         recoveryCounter.incrementInquiryResult("fds", response.status());
+        String idempotentKey = requestKey(transaction);
         switch (response.status()) {
-            case "success" -> paymentCommandService.completeFds(transaction.getId(), response.externalId());
-            case "failed" -> paymentCommandService.failFds(transaction.getId(), response.externalId());
-            case "not_found" -> paymentCommandService.failFds(transaction.getId(), null);
+            case "success" -> paymentCommandService.completeFdsAndComplete(
+                    transaction.getId(), response.externalId(), idempotentKey);
+            case "failed" -> paymentCommandService.failFdsAndComplete(
+                    transaction.getId(), response.externalId(), idempotentKey);
+            case "not_found" -> paymentCommandService.failFdsAndComplete(
+                    transaction.getId(), null, idempotentKey);
             case "in_progress" -> {}
         }
     }
 
     private void handleCaptureInquiry(PaymentTransaction transaction, CaptureInquiryResponse response) {
         recoveryCounter.incrementInquiryResult("capture", response.status());
+        String idempotentKey = confirmKey(transaction);
         switch (response.status()) {
-            case "success" -> paymentCommandService.completeCapture(transaction.getId(), response.externalId(), LedgerSourceType.PAYMENT_TRANSACTION);
-            case "failed" -> paymentCommandService.failCapture(transaction.getId(), response.externalId());
-            case "not_found" -> paymentCommandService.failCapture(transaction.getId(), null);
+            case "success" -> paymentCommandService.completeCaptureAndComplete(
+                    transaction.getId(), response.externalId(), idempotentKey, LedgerSourceType.PAYMENT_TRANSACTION);
+            case "failed" -> paymentCommandService.failCaptureAndComplete(
+                    transaction.getId(), response.externalId(), idempotentKey);
+            case "not_found" -> paymentCommandService.failCaptureAndComplete(
+                    transaction.getId(), null, idempotentKey);
             case "in_progress" -> {}
         }
+    }
+
+    // 복구 경로가 완결해야 할 멱등키를 PaymentIntent로부터 재구성한다.
+    private String requestKey(PaymentTransaction transaction) {
+        PaymentIntent intent = transaction.getPaymentIntent();
+        return IdempotentKeys.paymentRequest(intent.getMerchantId(), intent.getOrderId());
+    }
+
+    private String confirmKey(PaymentTransaction transaction) {
+        PaymentIntent intent = transaction.getPaymentIntent();
+        return IdempotentKeys.paymentConfirm(intent.getMerchantId(), intent.getPaymentKey());
+    }
+
+    private String refundIdempotentKey(PaymentTransaction transaction, String refundKey) {
+        return IdempotentKeys.paymentRefund(transaction.getPaymentIntent().getPaymentKey(), refundKey);
     }
 }

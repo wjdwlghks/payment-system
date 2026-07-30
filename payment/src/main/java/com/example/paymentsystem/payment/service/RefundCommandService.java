@@ -1,6 +1,7 @@
 package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.*;
+import com.example.paymentsystem.payment.dto.PaymentApiResult;
 import com.example.paymentsystem.payment.dto.RefundRequest;
 import com.example.paymentsystem.payment.dto.RefundRequestContext;
 import com.example.paymentsystem.payment.dto.RefundResponse;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +32,8 @@ public class RefundCommandService {
     private final WebhookService webhookService;
     private final RefundRiskService refundRiskService;
     private final EntityManager entityManager;
+    private final IdempotentService idempotentService;
+    private final ObjectMapper objectMapper;
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
@@ -86,6 +90,10 @@ public class RefundCommandService {
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public RefundResponse completeRefund(Long txId, String refundKey, Long refundedAmount, String externalId, LedgerSourceType sourceType) {
+        return completeRefundInternal(txId, refundKey, refundedAmount, externalId, sourceType);
+    }
+
+    private RefundResponse completeRefundInternal(Long txId, String refundKey, Long refundedAmount, String externalId, LedgerSourceType sourceType) {
         PaymentTransaction transaction = getTransaction(txId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         Refund refund = getRefund(refundKey);
@@ -111,6 +119,24 @@ public class RefundCommandService {
         return toResponse(refundKey, RefundStatus.SUCCEEDED, refund.getAmount());
     }
 
+    // 병합 트랜잭션: completeRefund + idempotent complete.
+    // refund phase가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
+    @Transactional
+    public PaymentApiResult completeRefundAndComplete(Long txId, String refundKey, Long refundedAmount, String externalId, String idempotentKey, LedgerSourceType sourceType) {
+        RefundResponse response = completeRefundInternal(txId, refundKey, refundedAmount, externalId, sourceType);
+        return completeIdempotentRefund(idempotentKey, response);
+    }
+
+    // 병합 트랜잭션: failRefund + idempotent complete.
+    // refund phase가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
+    @Transactional
+    public PaymentApiResult failRefundAndComplete(Long txId, String refundKey, String externalId, String idempotentKey) {
+        RefundResponse response = failRefundInternal(txId, refundKey, externalId);
+        return completeIdempotentRefund(idempotentKey, response);
+    }
+
     @Transactional
     public RefundResponse unknownRefund(Long txId, String refundKey) {
         PaymentTransaction transaction = getTransaction(txId);
@@ -128,6 +154,10 @@ public class RefundCommandService {
 
     @Transactional
     public RefundResponse failRefund(Long txId, String refundKey, String externalId) {
+        return failRefundInternal(txId, refundKey, externalId);
+    }
+
+    private RefundResponse failRefundInternal(Long txId, String refundKey, String externalId) {
         PaymentTransaction transaction = getTransaction(txId);
         Refund refund = getRefund(refundKey);
 
@@ -142,6 +172,12 @@ public class RefundCommandService {
         webhookService.saveRefundFailed(refund);
 
         return toResponse(refundKey, RefundStatus.FAIL, refund.getAmount());
+    }
+
+    private PaymentApiResult completeIdempotentRefund(String idempotentKey, RefundResponse response) {
+        String responseBody = objectMapper.writeValueAsString(response);
+        idempotentService.complete(idempotentKey, IdempotencyOperation.PAYMENT_REFUND, 200, responseBody);
+        return new PaymentApiResult(200, responseBody);
     }
 
     private RefundResponse toResponse(String refundKey, RefundStatus status, Long amount) {

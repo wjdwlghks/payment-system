@@ -1,6 +1,7 @@
 package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.IdempotencyKey;
+import com.example.paymentsystem.payment.domain.IdempotentKeys;
 import com.example.paymentsystem.payment.domain.IdempotentStatus;
 import com.example.paymentsystem.payment.domain.PaymentIntent;
 import com.example.paymentsystem.payment.domain.PaymentIntentStatus;
@@ -21,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class IdempotentRecoveryService {
 
     private static final Duration STALE_PROCESSING_THRESHOLD = Duration.ofSeconds(90);
-    private static final String REFUND_KEY_SEPARATOR = ":refund:";
+    private static final String REFUND_KEY_SEPARATOR = IdempotentKeys.REFUND_SEPARATOR;
 
     private final IdempotencyKeyRepository idempotencyKeyRepository;
     private final PaymentIntentRepository paymentIntentRepository;
