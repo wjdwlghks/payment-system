@@ -30,4 +30,9 @@ public class IdempotentService {
     public void complete(String idempotentKey, IdempotencyOperation operation, int code, String responseBody) {
         idempotentKeyManager.complete(idempotentKey, operation, code, responseBody);
     }
+
+    // 병합된 트랜잭션이 유니크 제약 위반으로 롤백된 뒤, 이미 존재하는 키를 다시 조회할 때 사용
+    public Optional<IdempotencyKey> find(String idempotentKey, IdempotencyOperation operation) {
+        return idempotencyKeyRepository.findByIdempotentKeyAndOperation(idempotentKey, operation);
+    }
 }

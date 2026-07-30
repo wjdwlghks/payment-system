@@ -10,14 +10,13 @@ import com.example.paymentsystem.payment.domain.IdempotencyKey;
 import com.example.paymentsystem.payment.domain.IdempotencyOperation;
 import com.example.paymentsystem.payment.domain.IdempotentStatus;
 import com.example.paymentsystem.payment.domain.PaymentIntent;
-import com.example.paymentsystem.payment.domain.PaymentIntentStatus;
 import com.example.paymentsystem.payment.dto.*;
+import com.example.paymentsystem.payment.exception.PaymentValidationException;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
-
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -38,23 +37,12 @@ public class PaymentService {
                 request.merchantId() + ":" + request.orderId() + ":" + request.amount()
         );
 
-        Optional<IdempotencyKey> existing = idempotentService.tryInsert(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, requestHash);
-
-        if (existing.isPresent()) {
-            IdempotencyKey e = existing.get();
-
-            if (!e.getRequestHash().equals(requestHash)) {
-                return errorResult(409, "Request Hash Mismatch");
-            }
-
-            if (e.getStatus() == IdempotentStatus.PROCESSING) {
-                return errorResult(409, "Processing Request");
-            }
-
-            return new PaymentApiResult(e.getResponseCode(), e.getResponseBody());
+        AuthRequestContext authContext;
+        try {
+            authContext = paymentCommandService.createAuthRequestWithIdempotency(request, idempotentKey, requestHash);
+        } catch (DataIntegrityViolationException e) {
+            return replayOrReject(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, requestHash, "Processing Request");
         }
-
-        AuthRequestContext authContext = paymentCommandService.createAuthRequest(request);
 
         CardAuthRequest authRequest = new CardAuthRequest(
                 authContext.cardRequestRef(),
@@ -66,49 +54,27 @@ public class PaymentService {
         return externalCallExecutor.execute(
                 () -> cardClient.authorize(request.cardCompany(), authRequest),
                 response -> handleAuthResponse(idempotentKey, authContext, response),
-                () -> completeRequest(
-                        idempotentKey,
-                        IdempotencyOperation.PAYMENT_REQUEST,
-                        paymentCommandService.unknownAuth(authContext.transactionId())
-                ),
-                () -> completeRequest(
-                        idempotentKey,
-                        IdempotencyOperation.PAYMENT_REQUEST,
-                        paymentCommandService.failAuth(authContext.transactionId(), null)
-                )
+                () -> paymentCommandService.unknownAuthAndComplete(authContext.transactionId(), idempotentKey),
+                () -> paymentCommandService.failAuthAndComplete(authContext.transactionId(), null, idempotentKey)
         );
     }
 
     public PaymentApiResult confirmPayment(String paymentKey) {
 
-        PaymentIntent paymentIntent = paymentCommandService.getPaymentIntent(paymentKey);
-
-        if (paymentIntent.getStatus() != PaymentIntentStatus.FDS_READY) {
-            return errorResult(422, "Payment not confirmable: status is " + paymentIntent.getStatus());
+        CaptureRequestContext captureContext;
+        try {
+            captureContext = paymentCommandService.createCaptureRequestWithIdempotency(paymentKey);
+        } catch (PaymentValidationException e) {
+            return errorResult(e.getStatusCode(), e.getMessage());
+        } catch (DataIntegrityViolationException e) {
+            PaymentIntent paymentIntent = paymentCommandService.getPaymentIntent(paymentKey);
+            String idempotentKey = paymentIntent.getMerchantId() + ":" + paymentKey;
+            String requestHash = DigestUtils.sha256Hex(idempotentKey);
+            return replayOrReject(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, requestHash, "Processing confirm");
         }
 
-        String idempotentKey = paymentIntent.getMerchantId() + ":" + paymentKey;
-        String requestHash = DigestUtils.sha256Hex(idempotentKey);
-
-        Optional<IdempotencyKey> existing = idempotentService.tryInsert(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, requestHash);
-
-        if (existing.isPresent()) {
-            IdempotencyKey e = existing.get();
-
-            if (!e.getRequestHash().equals(requestHash)) {
-                return errorResult(409, "Request Hash Mismatch");
-            }
-
-            if (e.getStatus() == IdempotentStatus.PROCESSING) {
-                return errorResult(409, "Processing confirm");
-            }
-
-            return new PaymentApiResult(e.getResponseCode(), e.getResponseBody());
-        }
-
-        CaptureRequestContext captureContext = paymentCommandService.createCaptureRequest(paymentKey);
-        PaymentResponse paymentResponse = captureExecutionService.captureWithRetry(captureContext);
-        return completeRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, paymentResponse);
+        String idempotentKey = captureContext.merchantId() + ":" + captureContext.paymentKey();
+        return captureExecutionService.captureWithRetry(captureContext, idempotentKey);
     }
 
     private PaymentApiResult handleAuthResponse(
@@ -117,20 +83,16 @@ public class PaymentService {
             CardAuthResponse response
     ) {
         if (!response.success()) {
-            return completeRequest(
-                    idempotentKey,
-                    IdempotencyOperation.PAYMENT_REQUEST,
-                    paymentCommandService.failAuth(context.transactionId(), response.externalId())
-            );
+            return paymentCommandService.failAuthAndComplete(context.transactionId(), response.externalId(), idempotentKey);
         }
 
-        paymentCommandService.completeAuth(context.transactionId(), response.externalId(), response.authorizedAt());
-        return runFdsCheck(idempotentKey, context.paymentKey());
+        FdsRequestContext fdsContext = paymentCommandService.completeAuthAndRequestFds(
+                context.transactionId(), response.externalId(), response.authorizedAt()
+        );
+        return runFdsCheck(idempotentKey, fdsContext);
     }
 
-    private PaymentApiResult runFdsCheck(String idempotentKey, String paymentKey) {
-        FdsRequestContext fdsContext = paymentCommandService.createFdsRequest(paymentKey);
-
+    private PaymentApiResult runFdsCheck(String idempotentKey, FdsRequestContext fdsContext) {
         FdsCheckRequest checkRequest = new FdsCheckRequest(
                 fdsContext.cardRequestRef(),
                 fdsContext.paymentKey(),
@@ -142,16 +104,8 @@ public class PaymentService {
         return externalCallExecutor.execute(
                 () -> fdsClient.check(checkRequest),
                 response -> handleFdsResponse(idempotentKey, fdsContext, response),
-                () -> completeRequest(
-                        idempotentKey,
-                        IdempotencyOperation.PAYMENT_REQUEST,
-                        paymentCommandService.unknownFds(fdsContext.transactionId())
-                ),
-                () -> completeRequest(
-                        idempotentKey,
-                        IdempotencyOperation.PAYMENT_REQUEST,
-                        paymentCommandService.failFds(fdsContext.transactionId(), null)
-                )
+                () -> paymentCommandService.unknownFdsAndComplete(fdsContext.transactionId(), idempotentKey),
+                () -> paymentCommandService.failFdsAndComplete(fdsContext.transactionId(), null, idempotentKey)
         );
     }
 
@@ -160,21 +114,26 @@ public class PaymentService {
             FdsRequestContext context,
             FdsCheckResponse response
     ) {
-        PaymentResponse paymentResponse = response.success()
-                ? paymentCommandService.completeFds(context.transactionId(), response.externalId())
-                : paymentCommandService.failFds(context.transactionId(), response.externalId());
-
-        return completeRequest(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, paymentResponse);
+        return response.success()
+                ? paymentCommandService.completeFdsAndComplete(context.transactionId(), response.externalId(), idempotentKey)
+                : paymentCommandService.failFdsAndComplete(context.transactionId(), response.externalId(), idempotentKey);
     }
 
-    private PaymentApiResult completeRequest(
-            String idempotentKey,
-            IdempotencyOperation operation,
-            PaymentResponse paymentResponse
-    ) {
-        String responseBody = objectMapper.writeValueAsString(paymentResponse);
-        idempotentService.complete(idempotentKey, operation, 200, responseBody);
-        return new PaymentApiResult(200, responseBody);
+    // 병합 트랜잭션이 유니크 제약 위반으로 롤백된 뒤, 기존 idempotency key를 조회해 재생/거절을 결정한다.
+    private PaymentApiResult replayOrReject(String idempotentKey, IdempotencyOperation operation, String requestHash, String processingMessage) {
+        IdempotencyKey existing = idempotentService.find(idempotentKey, operation)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Idempotency key not found after constraint violation: " + idempotentKey));
+
+        if (!existing.getRequestHash().equals(requestHash)) {
+            return errorResult(409, "Request Hash Mismatch");
+        }
+
+        if (existing.getStatus() == IdempotentStatus.PROCESSING) {
+            return errorResult(409, processingMessage);
+        }
+
+        return new PaymentApiResult(existing.getResponseCode(), existing.getResponseBody());
     }
 
     private PaymentApiResult errorResult(int statusCode, String message) {

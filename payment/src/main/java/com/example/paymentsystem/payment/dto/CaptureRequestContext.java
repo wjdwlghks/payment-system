@@ -8,6 +8,7 @@ public record CaptureRequestContext(
         String authorizationId,
         String paymentKey,
         String orderId,
+        String merchantId,
         Long amount,
         String cardRequestRef,
         CardCompany cardCompany
