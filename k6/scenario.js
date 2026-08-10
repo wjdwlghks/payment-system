@@ -14,21 +14,24 @@ const confirmUnknown     = new Counter('confirm_unknown');
 const confirmFailedHttp  = new Counter('confirm_failed_http');
 const confirmFailedOther = new Counter('confirm_failed_other');
 
-// ── 실행 설정 ────────────────────────────────────────────────
-const VUS      = parseInt(__ENV.VUS)      || 5;
-const WARMUP   = __ENV.WARMUP             || '30s';
+// ── 실행 설정 (TPS 기반) ────────────────────────────────────
+// TPS=100 처럼 목표 초당 결제(iteration) 수를 직접 지정한다.
+// preAllocatedVUs/maxVUs는 그 TPS를 유지하기 위해 k6가 내부적으로 쓰는 VU 풀 크기일 뿐,
+// 부하의 단위가 아니다 — 응답이 느려지면 k6가 maxVUs까지 자동으로 VU를 늘려 목표 TPS를 맞춘다.
+const TPS      = parseInt(__ENV.TPS)      || 100;
 const DURATION = __ENV.DURATION           || '2m';
-const WARMDOWN = __ENV.WARMDOWN           || '30s';
+const PRE_VUS  = parseInt(__ENV.PRE_VUS)  || Math.max(10, TPS);
+const MAX_VUS  = parseInt(__ENV.MAX_VUS)  || Math.max(50, TPS * 10);
 
 export const options = {
   scenarios: {
     load: {
-      executor: 'ramping-vus',
-      stages: [
-        { duration: WARMUP,   target: VUS }, // warm-up: 0 → VUS
-        { duration: DURATION, target: VUS }, // steady state
-        { duration: WARMDOWN, target: 0   }, // warm-down: VUS → 0
-      ],
+      executor: 'constant-arrival-rate',
+      rate: TPS,
+      timeUnit: '1s',
+      duration: DURATION,
+      preAllocatedVUs: PRE_VUS,
+      maxVUs: MAX_VUS,
     },
   },
   thresholds: {
@@ -87,6 +90,14 @@ export default function () {
 // ── 종료 summary ─────────────────────────────────────────────
 export function handleSummary(data) {
   const summaryFile = __ENV.SUMMARY_FILE || 'stage1-summary.json';
+
+  const dropped = data.metrics.dropped_iterations
+    ? data.metrics.dropped_iterations.values.count
+    : 0;
+  if (dropped > 0) {
+    console.log(`\n⚠ dropped_iterations=${dropped} — maxVUs(${MAX_VUS})가 부족해 목표 TPS(${TPS})를 못 채웠을 수 있음. MAX_VUS를 늘려서 재시도 권장.\n`);
+  }
+
   return {
     [summaryFile]: JSON.stringify(data, null, 2),
     stdout: textSummary(data, { indent: ' ', enableColors: true }),

@@ -10,7 +10,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import java.time.Instant;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -41,10 +40,6 @@ public class Account {
 
     @Column(nullable = false)
     private Long balance;
-
-    @Version
-    @Column(nullable = false)
-    private Long version;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

@@ -5,6 +5,8 @@ spring:
     url: jdbc:mysql://${MYSQL_HOST:payment-mysql}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:payment}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: ${MYSQL_USER:payment}
     password: ${MYSQL_PASSWORD:payment}
+    hikari:
+      maximum-pool-size: 20 # core * 2 경험식 (노트북 8~12코어 기준), 기본값(10)에서 상향
   flyway:
     enabled: true
   jpa:
