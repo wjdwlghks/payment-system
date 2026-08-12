@@ -311,6 +311,13 @@ log "=== 10. Recording results to $RESULT_FILE ==="
 
 python3 - <<EOF
 import json, sys
+
+# 5-case를 전부 본다 (run-settlement-verify.sh와 같은 기준).
+def recon_clean(v):
+    return (v.get("missingOnCardCount", 1) == 0 and v.get("missingOnPgCount", 1) == 0
+            and v.get("amountMismatchCount", 1) == 0 and v.get("statusMismatchCount", 1) == 0
+            and v.get("aggregateCount", 1) == 0)
+
 result = {
     "scenario": {
         "failure_location":    "$FAILURE_LOCATION",
@@ -342,8 +349,8 @@ result = {
         and json.loads('''$CAPTURE_DIFF''')["diff_count"] == 0
         and json.loads('''$LEDGER''')["passed"]
         and json.loads('''$IDEMPOTENCY''')["passed"]
-        and json.loads('''$VALIDATE_A''').get("missingOnCardCount", 1) == 0
-        and json.loads('''$VALIDATE_B''').get("missingOnCardCount", 1) == 0
+        and recon_clean(json.loads('''$VALIDATE_A'''))
+        and recon_clean(json.loads('''$VALIDATE_B'''))
     ),
     "k6_summary_file": "$RESULT_FILE.k6.json",
 }

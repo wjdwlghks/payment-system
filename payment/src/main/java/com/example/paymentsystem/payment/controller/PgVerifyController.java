@@ -33,8 +33,8 @@ public class PgVerifyController {
 
     @GetMapping("/pg-internal")
     public PgInternalResult pgInternal() {
-        long doneWithoutApprove        = txRepository.countDoneWithoutApproveSucceeded();
-        long approveWithoutDone        = txRepository.countApproveSucceededWithoutDone();
+        long approvedIntentWithoutTx        = txRepository.countApprovedIntentWithoutApproveTx();
+        long approveTxWithoutApprovedIntent        = txRepository.countApproveTxWithoutApprovedIntent();
         long captureWithoutApprove     = txRepository.countCaptureWithoutApprove();
         long approvedWithoutCapture    = txRepository.countApprovedWithoutCapture();
         long unknownRemaining          = txRepository.countByStatus(TransactionStatus.UNKNOWN);
@@ -44,13 +44,13 @@ public class PgVerifyController {
 
         // approvedWithoutCapture는 매입 배치 실행 전이면 정상값이라 판정에서 뺀다
         // (pendingOutbox와 같은 취급). 매입 완주 후 0인지는 검증 스크립트가 따로 본다.
-        boolean passed = doneWithoutApprove == 0 && approveWithoutDone == 0
+        boolean passed = approvedIntentWithoutTx == 0 && approveTxWithoutApprovedIntent == 0
                 && captureWithoutApprove == 0
                 && unknownRemaining == 0
                 && reconDiscrepancy == 0 && processingIdempotencyKeys == 0;
 
         return new PgInternalResult(
-                doneWithoutApprove, approveWithoutDone,
+                approvedIntentWithoutTx, approveTxWithoutApprovedIntent,
                 captureWithoutApprove, approvedWithoutCapture,
                 unknownRemaining, pendingOutbox, reconDiscrepancy,
                 processingIdempotencyKeys, passed);
@@ -76,8 +76,8 @@ public class PgVerifyController {
     }
 
     public record PgInternalResult(
-            long doneWithoutApprove,
-            long approveWithoutDone,
+            long approvedIntentWithoutTx,
+            long approveTxWithoutApprovedIntent,
             long captureWithoutApprove,
             long approvedWithoutCapture,
             long unknownRemaining,

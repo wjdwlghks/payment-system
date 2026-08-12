@@ -1,12 +1,10 @@
 package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.*;
-import com.example.paymentsystem.payment.dto.ClearingBatchResponse;
 import com.example.paymentsystem.payment.repository.ClearingBatchItemRepository;
 import com.example.paymentsystem.payment.repository.ClearingBatchRepository;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.retry.annotation.Retryable;
@@ -19,55 +17,22 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+/**
+ * 청산은 대사(ReconciliationValidationService.validate)를 통해서만 일어난다.
+ * 대사 대상 조회가 이미 청산된 tx를 제외하므로(ClearingBatchItem NOT EXISTS),
+ * 대사 밖에서 먼저 청산하면 대사가 AGGREGATE 불일치로 깨진다.
+ */
 @Service
 @RequiredArgsConstructor
 public class ClearingService {
 
     private static final ZoneId BATCH_CODE_ZONE = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter BATCH_CODE_DATE_FORMATTER = DateTimeFormatter.BASIC_ISO_DATE;
-    private static final int CLEARING_LIMIT = 5000;
 
     private final PaymentTransactionRepository paymentTransactionRepository;
     private final ClearingBatchRepository clearingBatchRepository;
     private final ClearingBatchItemRepository clearingBatchItemRepository;
     private final LedgerService ledgerService;
-
-    // 매입이 배치가 되면서 시간 window가 필요 없어졌다 — 미청산 매입을 전부 긁는다.
-    // UNKNOWN 매입이 뒤늦게 확정돼도 다음 청산에서 집히고, ClearingBatchItem.tx_id UNIQUE가 이중청산을 막는다.
-    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
-    @Transactional
-    public ClearingBatchResponse clearing() {
-        List<PaymentTransaction> transactions = paymentTransactionRepository.findOldestUnclearedTransactions(
-                TransactionStatus.SUCCEEDED,
-                TransactionType.CAPTURE,
-                PageRequest.of(0, CLEARING_LIMIT)
-        );
-
-        if (transactions.isEmpty()) {
-            return ClearingBatchResponse.noTarget(null, Instant.now());
-        }
-
-        Instant windowStart = transactions.get(0).getUpdatedAt();
-        Instant windowEnd = transactions.get(transactions.size() - 1).getUpdatedAt().plusMillis(1);
-
-        long totalAmount = 0L;
-        for (PaymentTransaction transaction : transactions) {
-            totalAmount += transaction.getAmount();
-        }
-
-        ClearingBatch batch = clearingBatchRepository.save(
-                new ClearingBatch(generateBatchCode(), windowStart, windowEnd, totalAmount, transactions.size())
-        );
-
-        for (PaymentTransaction transaction : transactions) {
-            clearingBatchItemRepository.save(new ClearingBatchItem(batch, transaction, transaction.getAmount()));
-        }
-
-        ledgerService.postClearing(batch.getId(), totalAmount);
-        batch.markCleared();
-
-        return ClearingBatchResponse.created(batch);
-    }
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional

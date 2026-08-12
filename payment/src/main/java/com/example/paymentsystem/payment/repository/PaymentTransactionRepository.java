@@ -7,7 +7,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -36,23 +35,6 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             @Param("before") Instant before
     );
 
-    @Query("""
-    select t
-    from PaymentTransaction t
-    where t.status = :status
-      and t.type = :type
-      and not exists (
-          select 1
-          from ClearingBatchItem item
-          where item.transaction = t
-      )
-    order by t.updatedAt asc
-""")
-    List<PaymentTransaction> findOldestUnclearedTransactions(
-            @Param("status") TransactionStatus status,
-            @Param("type") TransactionType type,
-            Pageable pageable
-    );
 
     @Query("""
     select t
@@ -96,7 +78,7 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
           AND pt.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
     )
     """)
-    long countDoneWithoutApproveSucceeded();
+    long countApprovedIntentWithoutApproveTx();
 
     @Query("""
     SELECT COUNT(pt) FROM PaymentTransaction pt
@@ -104,7 +86,7 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
       AND pt.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
       AND pt.paymentIntent.status <> com.example.paymentsystem.payment.domain.PaymentIntentStatus.APPROVED
     """)
-    long countApproveSucceededWithoutDone();
+    long countApproveTxWithoutApprovedIntent();
 
     /** 매입은 됐는데 그 결제에 성공한 승인이 없다 — 고아 매입. 항상 0이어야 한다. */
     @Query("""

@@ -2,8 +2,8 @@ package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.*;
 import com.example.paymentsystem.payment.dto.CaptureRequestContext;
+import com.example.paymentsystem.payment.dto.CaptureResponse;
 import com.example.paymentsystem.payment.dto.PaymentApiResult;
-import com.example.paymentsystem.payment.dto.PaymentResponse;
 import com.example.paymentsystem.payment.exception.PaymentValidationException;
 import com.example.paymentsystem.payment.repository.IdempotencyKeyRepository;
 import com.example.paymentsystem.payment.repository.PaymentIntentRepository;
@@ -125,14 +125,13 @@ public class CaptureCommandService {
         return new PaymentApiResult(200, objectMapper.writeValueAsString(toResponse(transaction)));
     }
 
-    private PaymentResponse toResponse(PaymentTransaction transaction) {
+    private CaptureResponse toResponse(PaymentTransaction transaction) {
         PaymentIntent intent = transaction.getPaymentIntent();
-        return new PaymentResponse(
+        return new CaptureResponse(
                 intent.getPaymentKey(),
                 intent.getOrderId(),
-                intent.getStatus(),
-                intent.getAmount(),
-                intent.getAuthenticatedAt()
+                transaction.getAmount(),
+                transaction.getStatus()
         );
     }
 

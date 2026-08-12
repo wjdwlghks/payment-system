@@ -23,7 +23,7 @@ export const options = {
 
 // CARD_CORP_A에만 지속 지연(SLOW_SUCCESS 2s) 주입, CARD_CORP_B는 정상
 export function setup() {
-  ['auth', 'capture'].forEach(ep => {
+  ['auth', 'approve'].forEach(ep => {
     http.post(`${CARD_A}/admin/failure`, JSON.stringify({
       endpoint: ep,
       failure: 'SLOW_SUCCESS',
@@ -31,7 +31,7 @@ export function setup() {
       triggerProbability: 1.0,
     }), JSON_HDR);
   });
-  console.log('[setup] SLOW_SUCCESS(2s) injected on CARD_CORP_A auth+capture only');
+  console.log('[setup] SLOW_SUCCESS(2s) injected on CARD_CORP_A auth+approve only');
 }
 
 export function teardown() {

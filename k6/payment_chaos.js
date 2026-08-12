@@ -9,13 +9,17 @@ const authOk       = new Counter('auth_ok');         // auth 성공 (이후 fds 
 const authUnknown  = new Counter('auth_unknown');    // UNKNOWN_AUTH
 const authFail     = new Counter('auth_fail');       // AUTH_FAILED / HTTP 에러
 
-const fdsOk        = new Counter('fds_ok');          // FDS_READY
+const fdsOk        = new Counter('fds_ok');          // FDS_PASSED
 const fdsUnknown   = new Counter('fds_unknown');     // UNKNOWN_FDS
 const fdsFail      = new Counter('fds_fail');        // FDS_FAILED
 
-const captureOk      = new Counter('capture_ok');        // DONE
-const captureUnknown = new Counter('capture_unknown');   // UNKNOWN_CAPTURE
-const captureFail    = new Counter('capture_fail');      // CAPTURE_FAILED / HTTP 에러
+const approveOk      = new Counter('approve_ok');        // APPROVED
+const approveUnknown = new Counter('approve_unknown');   // UNKNOWN_APPROVE
+const approveFail    = new Counter('approve_fail');      // APPROVE_FAILED / HTTP 에러
+
+const captureOk      = new Counter('capture_ok');        // CAPTURE tx SUCCEEDED
+const captureUnknown = new Counter('capture_unknown');   // CAPTURE tx UNKNOWN
+const captureFail    = new Counter('capture_fail');      // CAPTURE tx FAIL / HTTP 에러
 
 // ── 서비스 주소 ──────────────────────────────────────────────
 const PAYMENT = __ENV.PAYMENT || 'http://localhost:8082';
@@ -79,16 +83,18 @@ export const options = {
 // CONNECT_FAILURE: payment RestClient 인터셉터에 주입 → 재시도 없이 UNKNOWN→inquiry로 수렴
 export function setup() {
   [CARD_A, CARD_B].forEach(card => {
-    injectServerFailures(card, 'auth');
-    injectServerFailures(card, 'capture');
+    injectServerFailures(card, 'auth');      // 인증
+    injectServerFailures(card, 'approve');   // 승인
+    injectServerFailures(card, 'capture');   // 매입
   });
   injectServerFailures(FDS, 'fds_check');
 
   injectConnectFailure('card_auth');
   injectConnectFailure('fds_check');
+  injectConnectFailure('card_approve');
   injectConnectFailure('card_capture');
 
-  console.log('[setup] all failures injected on card-a/card-b/fds (prob=0.027 each, 3 types × 3 stages, refund 제외)');
+  console.log(`[setup] failures injected on card-a/card-b/fds (prob=${PROB} each, 3 types x 4 stages)`);
 }
 
 // ── teardown: 전체 해제 ──────────────────────────────────────
@@ -136,42 +142,61 @@ export default function () {
 
   if (authStatus === 'FDS_FAILED')       { fdsFail.add(1);     return; }
   if (authStatus === 'UNKNOWN_FDS')      { fdsUnknown.add(1);  return; }
-  fdsOk.add(1);  // FDS_READY
+  fdsOk.add(1);  // FDS_PASSED
 
   sleep(0.1);
 
-  // ── 2) Confirm (Capture) ─────────────────────────────────
-  const confirmRes = http.post(
-    `${PAYMENT}/v1/payment/${paymentKey}/confirm`,
+  // ── 2) Approve (승인) ────────────────────────────────────
+  const approveRes = http.post(
+    `${PAYMENT}/v1/payment/${paymentKey}/approve`,
     null,
     { ...JSON_HDR, ...tag, timeout: '15s' }
   );
 
-  if (!check(confirmRes, { 'confirm 200': r => r.status === 200 })) {
-    captureFail.add(1);
+  if (!check(approveRes, { 'approve 200': r => r.status === 200 })) {
+    approveFail.add(1);
     return;
   }
 
-  const piStatus = confirmRes.json('status');
-  if (piStatus === 'DONE') {
-    captureOk.add(1);
+  const piStatus = approveRes.json('status');
+  if (piStatus === 'APPROVED') {
+    approveOk.add(1);
   } else if (typeof piStatus === 'string' && piStatus.includes('UNKNOWN')) {
-    captureUnknown.add(1);
+    approveUnknown.add(1);
     return;
   } else {
+    approveFail.add(1);
+    return;
+  }
+
+  // ── 3) Capture (매입) ────────────────────────────────────
+  // 가맹점은 승인완료를 받으면 고객에게 결제완료를 알리는 동시에 매입을 요청한다고 가정한다.
+  // 매입은 PaymentIntent 상태를 바꾸지 않으므로 CAPTURE tx 상태(captureStatus)로 판정한다.
+  const captureRes = http.post(
+    `${PAYMENT}/v1/payment/${paymentKey}/capture`,
+    null,
+    { ...JSON_HDR, ...tag, timeout: '15s' }
+  );
+
+  if (!check(captureRes, { 'capture 200': r => r.status === 200 })) {
     captureFail.add(1);
     return;
   }
+
+  const captureStatus = captureRes.json('captureStatus');
+  if (captureStatus === 'SUCCEEDED')      captureOk.add(1);
+  else if (captureStatus === 'UNKNOWN')   captureUnknown.add(1);
+  else                                    captureFail.add(1);
 }
 
-// run-now는 1회 호출당 최대 300건(LIMIT 300, auth/fds/capture 공유)만 처리하므로,
+// run-now는 1회 호출당 최대 300건(LIMIT 300, 전 단계 공유)만 처리하므로,
 // 부하 종료 시점에 쌓인 backlog를 다 비울 때까지 /admin/convergence로 확인하며 반복 호출한다.
 // (10초 스케줄러를 그냥 기다리는 것보다 즉시 수렴시켜 정확한 최종 지표를 바로 얻기 위함)
 function forceConvergence(maxIterations = 60) {
   for (let i = 0; i < maxIterations; i++) {
     const status = http.get(`${PAYMENT}/admin/convergence`).json();
     if (status.converged) {
-      console.log(`[convergence] run-now ${i}회 호출 후 수렴 완료 (unknownTx=0, staleRequested=0, authReady=0, processingIdempotencyKeys=0)`);
+      console.log(`[convergence] run-now ${i}회 호출 후 수렴 완료 (unknownTx=0, staleRequested=0, authenticated=0, processingIdempotencyKeys=0)`);
       return;
     }
     http.post(`${PAYMENT}/admin/scheduler/run-now`);
@@ -186,6 +211,7 @@ export function handleSummary(data) {
 
   const totalAuth    = get('auth_ok')    + get('auth_unknown')    + get('auth_fail');
   const totalFds     = get('fds_ok')     + get('fds_unknown')     + get('fds_fail');
+  const totalApprove = get('approve_ok') + get('approve_unknown') + get('approve_fail');
   const totalCapture = get('capture_ok') + get('capture_unknown') + get('capture_fail');
 
   const dropped = get('dropped_iterations');
@@ -198,13 +224,14 @@ export function handleSummary(data) {
   // inquiry 메트릭 조회 (재시도 제거됨 — 모든 모호한 결과는 UNKNOWN→inquiry로 복구, 위에서 강제 수렴시킨 뒤의 최종치)
   const recovery = http.get(`${PAYMENT}/admin/metrics/recovery`).json();
 
-  console.log('\n========= Chaos Test Summary (payment only, no refund) =========');
+  console.log('\n========= Chaos Test Summary (인증 → 승인 → 매입) =========');
   console.log(`Auth     total=${totalAuth}   ok=${get('auth_ok')}   unknown=${get('auth_unknown')}  fail=${get('auth_fail')}`);
   console.log(`FDS      total=${totalFds}   ok=${get('fds_ok')}   unknown=${get('fds_unknown')}  fail=${get('fds_fail')}`);
+  console.log(`Approve  total=${totalApprove}  ok=${get('approve_ok')}  unknown=${get('approve_unknown')}  fail=${get('approve_fail')}`);
   console.log(`Capture  total=${totalCapture}  ok=${get('capture_ok')}  unknown=${get('capture_unknown')}  fail=${get('capture_fail')}`);
 
   console.log('\n--- Inquiry(스케줄러 재조회) Stats: unknown → success/notFound ---');
-  ['auth', 'fds', 'capture'].forEach(type => {
+  ['auth', 'fds', 'approve', 'capture'].forEach(type => {
     const s = recovery.inquiry[type];
     if (s && s.total > 0) {
       console.log(`  ${type}: total=${s.total}  success=${s.success}  notFound=${s.notFound}  failed=${s.failed}  inProgress=${s.inProgress}`);

@@ -15,10 +15,16 @@ public final class IdempotentKeys {
     }
 
     public static String paymentApprove(String merchantId, String paymentKey) {
-        return merchantId + ":" + paymentKey;
+        return perPayment(merchantId, paymentKey);
     }
 
     public static String paymentCapture(String merchantId, String paymentKey) {
+        return perPayment(merchantId, paymentKey);
+    }
+
+    // 승인·매입은 결제 건당 1회라 키 포맷이 같다.
+    // 서로 다른 키로 취급되는 건 idempotency_keys의 (operation, idempotent_key) UNIQUE 덕이다.
+    private static String perPayment(String merchantId, String paymentKey) {
         return merchantId + ":" + paymentKey;
     }
 }

@@ -9,10 +9,14 @@ const authSucceeded    = new Counter('auth_succeeded');
 const authFailedHttp   = new Counter('auth_failed_http');   // 5xx
 const authFailedOther  = new Counter('auth_failed_other');  // 4xx 등
 
-const confirmDone        = new Counter('confirm_done');
-const confirmUnknown     = new Counter('confirm_unknown');
-const confirmFailedHttp  = new Counter('confirm_failed_http');
-const confirmFailedOther = new Counter('confirm_failed_other');
+const approveDone        = new Counter('approve_done');
+const approveUnknown     = new Counter('approve_unknown');
+const approveFailedHttp  = new Counter('approve_failed_http');
+const approveFailedOther = new Counter('approve_failed_other');
+
+const captureOk          = new Counter('capture_ok');
+const captureUnknown     = new Counter('capture_unknown');
+const captureFailed      = new Counter('capture_failed');
 
 // ── 실행 설정 (TPS 기반) ────────────────────────────────────
 // TPS=100 처럼 목표 초당 결제(iteration) 수를 직접 지정한다.
@@ -67,30 +71,41 @@ export default function () {
   const paymentKey = authRes.json('paymentKey');
   if (!paymentKey) return;
 
-  // 2) Confirm (Capture)
-  const confirmRes = http.post(
+  // 2) Approve (승인)
+  const approveRes = http.post(
     `${PAYMENT_BASE}/v1/payment/${paymentKey}/approve`,
     null,
-    { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'confirm', cardCompany: company } }
+    { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'approve', cardCompany: company } }
   );
 
-  if (confirmRes.status >= 500) { confirmFailedHttp.add(1, { cardCompany: company });  return; }
-  if (confirmRes.status >= 400) { confirmFailedOther.add(1, { cardCompany: company }); return; }
+  if (approveRes.status >= 500) { approveFailedHttp.add(1, { cardCompany: company });  return; }
+  if (approveRes.status >= 400) { approveFailedOther.add(1, { cardCompany: company }); return; }
 
-  const piStatus = confirmRes.json('status');
+  const piStatus = approveRes.json('status');
   if (piStatus === 'APPROVED') {
-    confirmDone.add(1, { cardCompany: company });
-    // 매입은 가맹점이 결제 건별로 요청한다 (PG 배치가 아니다).
-    http.post(
-      `${PAYMENT_BASE}/v1/payment/${paymentKey}/capture`,
-      null,
-      { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'capture', cardCompany: company } }
-    );
+    approveDone.add(1, { cardCompany: company });
   } else if (typeof piStatus === 'string' && piStatus.startsWith('UNKNOWN')) {
-    confirmUnknown.add(1, { cardCompany: company });
+    approveUnknown.add(1, { cardCompany: company });
+    return;
   } else {
-    confirmFailedOther.add(1, { cardCompany: company });
+    approveFailedOther.add(1, { cardCompany: company });
+    return;
   }
+
+  // 3) Capture (매입) — 가맹점이 승인완료 직후 건별로 요청한다.
+  //    매입은 PaymentIntent 상태를 바꾸지 않으므로 captureStatus로 판정한다.
+  const captureRes = http.post(
+    `${PAYMENT_BASE}/v1/payment/${paymentKey}/capture`,
+    null,
+    { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'capture', cardCompany: company } }
+  );
+
+  if (captureRes.status >= 400) { captureFailed.add(1, { cardCompany: company }); return; }
+
+  const captureStatus = captureRes.json('captureStatus');
+  if (captureStatus === 'SUCCEEDED')    captureOk.add(1, { cardCompany: company });
+  else if (captureStatus === 'UNKNOWN') captureUnknown.add(1, { cardCompany: company });
+  else                                  captureFailed.add(1, { cardCompany: company });
 }
 
 // ── 종료 summary ─────────────────────────────────────────────
