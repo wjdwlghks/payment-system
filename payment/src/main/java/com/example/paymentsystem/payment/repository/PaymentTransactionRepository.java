@@ -41,28 +41,6 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     from PaymentTransaction t
     where t.status = :status
       and t.type = :type
-      and t.updatedAt >= :windowStart
-      and t.updatedAt < :windowEnd
-      and not exists (
-          select 1
-          from ClearingBatchItem item
-          where item.transaction = t
-      )
-    order by t.updatedAt asc
-""")
-    List<PaymentTransaction> findUnclearedCaptureTransactions(
-            @Param("status") TransactionStatus status,
-            @Param("type") TransactionType type,
-            @Param("windowStart") Instant windowStart,
-            @Param("windowEnd") Instant windowEnd
-    );
-
-
-    @Query("""
-    select t
-    from PaymentTransaction t
-    where t.status = :status
-      and t.type = :type
       and not exists (
           select 1
           from ClearingBatchItem item
@@ -118,9 +96,7 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
           AND pt.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
     )
     """)
-    // Stage 2 한시: DONE ⟺ 승인성공 등가를 검증한다.
-    // Stage 3에서 DONE(승인) 이후 매입이 분리되면 불변식 자체를 교체한다.
-    long countDoneWithoutCaptureSucceeded();
+    long countDoneWithoutApproveSucceeded();
 
     @Query("""
     SELECT COUNT(pt) FROM PaymentTransaction pt
@@ -128,5 +104,38 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
       AND pt.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
       AND pt.paymentIntent.status <> com.example.paymentsystem.payment.domain.PaymentIntentStatus.DONE
     """)
-    long countCaptureSucceededWithoutDone();
+    long countApproveSucceededWithoutDone();
+
+    /** 매입은 됐는데 그 결제에 성공한 승인이 없다 — 고아 매입. 항상 0이어야 한다. */
+    @Query("""
+    SELECT COUNT(pt) FROM PaymentTransaction pt
+    WHERE pt.type = com.example.paymentsystem.payment.domain.TransactionType.CAPTURE
+      AND pt.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
+      AND NOT EXISTS (
+        SELECT ap FROM PaymentTransaction ap
+        WHERE ap.paymentIntent = pt.paymentIntent
+          AND ap.type = com.example.paymentsystem.payment.domain.TransactionType.APPROVE
+          AND ap.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
+      )
+    """)
+    long countCaptureWithoutApprove();
+
+    /** 승인은 끝났는데 아직 매입이 안 됐다 — 매입 배치 실행 전에는 정상값이다(판정에 쓰지 않는다). */
+    @Query("""
+    SELECT COUNT(pi) FROM PaymentIntent pi
+    WHERE pi.status = com.example.paymentsystem.payment.domain.PaymentIntentStatus.DONE
+    AND EXISTS (
+        SELECT ap FROM PaymentTransaction ap
+        WHERE ap.paymentIntent = pi
+          AND ap.type = com.example.paymentsystem.payment.domain.TransactionType.APPROVE
+          AND ap.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
+    )
+    AND NOT EXISTS (
+        SELECT cp FROM PaymentTransaction cp
+        WHERE cp.paymentIntent = pi
+          AND cp.type = com.example.paymentsystem.payment.domain.TransactionType.CAPTURE
+          AND cp.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
+    )
+    """)
+    long countApprovedWithoutCapture();
 }

@@ -204,6 +204,19 @@ print(d['unknownTx'] == 0 and d['staleRequested'] == 0
   elapsed=$(( elapsed + CONVERGE_INTERVAL ))
 done
 
+# ── 5-1. 매입 배치 (승인 -> 매입) ────────────────────────────────────────────
+# 매입은 동기 경로 밖 admin 배치다. 잔량이 0이 될 때까지 반복 실행한 뒤 정산 파일을 만든다.
+log "=== 5-1. Capture run ==="
+for attempt in $(seq 1 30); do
+  CAPTURE_RUN=$(curl -sf -X POST "$PAYMENT_URL/admin/captures/run")
+  PENDING_CAPTURE=$(curl -sf "$PAYMENT_URL/admin/verify/pg-internal" \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['approvedWithoutCapture'])")
+  log "  capture attempt $attempt: $CAPTURE_RUN (approvedWithoutCapture=$PENDING_CAPTURE)"
+  [ "$PENDING_CAPTURE" = "0" ] && break
+  sleep 2
+done
+APPROVED_WITHOUT_CAPTURE=$PENDING_CAPTURE
+
 # ── 6. 정산 파일 생성 ────────────────────────────────────────────────────────
 log "=== 6. Generate settlement files ==="
 SETTLEMENT_FILE_A=$(curl -sf -X POST "$CARD_URL/admin/settlements/generate")
@@ -257,6 +270,8 @@ log "A. PG internal: $PG_INTERNAL"
 # B. PG ↔ Card 집합 비교
 PG_AUTH_KEYS=$(curl -sf "$PAYMENT_URL/admin/audit/auth-keys")
 CARD_AUTH_KEYS=$(curl -sf "$CARD_URL/admin/audit/auth-keys")
+PG_APPROVE_KEYS=$(curl -sf "$PAYMENT_URL/admin/audit/approve-keys")
+CARD_APPROVE_KEYS=$(curl -sf "$CARD_URL/admin/audit/approve-keys")
 PG_CAPTURE_KEYS=$(curl -sf "$PAYMENT_URL/admin/audit/capture-keys")
 CARD_CAPTURE_KEYS=$(curl -sf "$CARD_URL/admin/audit/capture-keys")
 
@@ -264,6 +279,15 @@ AUTH_DIFF=$(python3 - <<EOF
 import json
 pg   = set(json.loads('''$PG_AUTH_KEYS'''))
 card = set(json.loads('''$CARD_AUTH_KEYS'''))
+diff = pg.symmetric_difference(card)
+print(json.dumps({"pg_only": list(pg - card), "card_only": list(card - pg), "diff_count": len(diff)}))
+EOF
+)
+
+APPROVE_DIFF=$(python3 - <<EOF
+import json
+pg   = set(json.loads('''$PG_APPROVE_KEYS'''))
+card = set(json.loads('''$CARD_APPROVE_KEYS'''))
 diff = pg.symmetric_difference(card)
 print(json.dumps({"pg_only": list(pg - card), "card_only": list(card - pg), "diff_count": len(diff)}))
 EOF
@@ -279,6 +303,7 @@ EOF
 )
 
 log "B-AUTH diff:    $AUTH_DIFF"
+log "B-APPROVE diff: $APPROVE_DIFF"
 log "B-CAPTURE diff: $CAPTURE_DIFF"
 
 # C. Ledger
@@ -312,9 +337,11 @@ result = {
     "recovery":    json.loads('''$RECOVERY'''),
     "row_lock":    json.loads('''$ROW_LOCK_STATS'''),
     "pending_webhook_at_k6_end": $PENDING_WEBHOOK_AT_K6_END,
+    "approved_without_capture": $APPROVED_WITHOUT_CAPTURE,
     "verify": {
         "A_pg_internal":  json.loads('''$PG_INTERNAL'''),
         "B_auth_diff":    json.loads('''$AUTH_DIFF'''),
+        "B_approve_diff": json.loads('''$APPROVE_DIFF'''),
         "B_capture_diff": json.loads('''$CAPTURE_DIFF'''),
         "C_ledger":       json.loads('''$LEDGER'''),
         "D_idempotency":  json.loads('''$IDEMPOTENCY'''),
@@ -324,6 +351,8 @@ result = {
     "passed": (
         json.loads('''$PG_INTERNAL''')["passed"]
         and json.loads('''$AUTH_DIFF''')["diff_count"] == 0
+        and json.loads('''$APPROVE_DIFF''')["diff_count"] == 0
+        and $APPROVED_WITHOUT_CAPTURE == 0
         and json.loads('''$CAPTURE_DIFF''')["diff_count"] == 0
         and json.loads('''$LEDGER''')["passed"]
         and json.loads('''$IDEMPOTENCY''')["passed"]

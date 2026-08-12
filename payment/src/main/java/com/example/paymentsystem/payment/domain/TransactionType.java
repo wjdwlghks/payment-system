@@ -5,5 +5,7 @@ public enum TransactionType {
     AUTH,
     FDS,
     /** 승인 — 카드사 승인요청. 성공하면 사용자에게 결제완료(DONE). */
-    APPROVE
+    APPROVE,
+    /** 매입 — 카드사 대금 청구. 동기 경로 밖 배치이며, 원장 기표는 이 시점에 일어난다. */
+    CAPTURE
 }

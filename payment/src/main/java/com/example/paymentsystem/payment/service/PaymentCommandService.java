@@ -300,7 +300,7 @@ public class PaymentCommandService {
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentResponse completeApprove(Long approveTransactionId, String externalId, LedgerSourceType sourceType) {
+    public PaymentResponse completeApprove(Long approveTransactionId, String externalId) {
         PaymentTransaction transaction = getTransaction(approveTransactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() != TransactionStatus.REQUESTED
@@ -310,7 +310,6 @@ public class PaymentCommandService {
         paymentIntent.markDone(externalId);
         transaction.markSucceeded(externalId);
         webhookService.savePaymentComplete(paymentIntent);
-        ledgerService.postCapture(approveTransactionId, sourceType);
         return toResponse(paymentIntent);
     }
 
@@ -318,14 +317,13 @@ public class PaymentCommandService {
     // confirm phase가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentApiResult completeApproveAndComplete(Long approveTransactionId, String externalId, String idempotentKey, LedgerSourceType sourceType) {
+    public PaymentApiResult completeApproveAndComplete(Long approveTransactionId, String externalId, String idempotentKey) {
         PaymentTransaction transaction = getTransaction(approveTransactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() == TransactionStatus.REQUESTED || transaction.getStatus() == TransactionStatus.UNKNOWN) {
             paymentIntent.markDone(externalId);
             transaction.markSucceeded(externalId);
             webhookService.savePaymentComplete(paymentIntent);
-            ledgerService.postCapture(approveTransactionId, sourceType);
         }
         return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, toResponse(paymentIntent));
     }

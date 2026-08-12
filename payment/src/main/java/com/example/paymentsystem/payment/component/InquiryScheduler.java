@@ -57,6 +57,7 @@ public class InquiryScheduler {
                 case AUTH -> inquiryService.inquiryAuth(transaction);
                 case FDS -> inquiryService.inquiryFds(transaction);
                 case APPROVE -> inquiryService.inquiryApprove(transaction);
+                case CAPTURE -> inquiryService.inquiryCapture(transaction);
             }
         } catch (Exception e) {
             log.error("Failed to inquire stuck transaction. transactionId={} status={}",

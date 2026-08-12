@@ -10,17 +10,17 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class UnknownReconciler {
 
-    private final PaymentCommandService paymentCommandService;
+    private final CaptureCommandService captureCommandService;
 
     // Stage 2 한시: 아직 매입이 없어 승인(APPROVE)을 대상으로 삼는다.
     // Stage 3에서 매입(CAPTURE)이 생기면 그쪽으로 옮긴다.
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void reconcileCaptureApproved(Long txId, String externalId) {
-        paymentCommandService.completeApprove(txId, externalId, LedgerSourceType.RECON_ADJUSTMENT);
+        captureCommandService.completeCapture(txId, externalId, LedgerSourceType.RECON_ADJUSTMENT);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void reconcileCaptureDeclined(Long txId, String externalId) {
-        paymentCommandService.failApprove(txId, externalId);
+        captureCommandService.failCapture(txId, externalId);
     }
 }

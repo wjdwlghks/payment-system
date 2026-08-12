@@ -3,6 +3,7 @@ package com.example.paymentsystem.payment.service;
 import com.example.paymentsystem.payment.client.card.AuthInquiryResponse;
 import com.example.paymentsystem.payment.client.card.CardClient;
 import com.example.paymentsystem.payment.client.card.ApproveInquiryResponse;
+import com.example.paymentsystem.payment.client.card.CaptureInquiryResponse;
 import com.example.paymentsystem.payment.client.fds.FdsClient;
 import com.example.paymentsystem.payment.client.fds.FdsInquiryResponse;
 import com.example.paymentsystem.payment.component.RecoveryCounter;
@@ -32,6 +33,7 @@ public class InquiryService {
     private final FdsClient fdsClient;
     private final ExternalCallExecutor externalCallExecutor;
     private final PaymentCommandService paymentCommandService;
+    private final CaptureCommandService captureCommandService;
     private final RecoveryCounter recoveryCounter;
 
     @Transactional(readOnly = true)
@@ -121,12 +123,36 @@ public class InquiryService {
         }
     }
 
+    // 매입은 배치라 사용자 멱등키가 없다 — 상태만 확정하면 된다.
+    public void inquiryCapture(PaymentTransaction transaction) {
+        recoveryCounter.incrementInquiryTotal("capture");
+        CardCompany company = transaction.getPaymentIntent().getCardCompany();
+        String cardRequestRef = transaction.getCardRequestRef();
+        externalCallExecutor.executeVoid(
+                () -> cardClient.inquiryCapture(company, cardRequestRef),
+                response -> handleCaptureInquiry(transaction, response),
+                () -> {},
+                () -> captureCommandService.failCapture(transaction.getId(), null)
+        );
+    }
+
+    private void handleCaptureInquiry(PaymentTransaction transaction, CaptureInquiryResponse response) {
+        recoveryCounter.incrementInquiryResult("capture", response.status());
+        switch (response.status()) {
+            case "success" -> captureCommandService.completeCapture(
+                    transaction.getId(), response.externalId(), LedgerSourceType.PAYMENT_TRANSACTION);
+            case "failed" -> captureCommandService.failCapture(transaction.getId(), response.externalId());
+            case "not_found" -> captureCommandService.failCapture(transaction.getId(), null);
+            case "in_progress" -> {}
+        }
+    }
+
     private void handleApproveInquiry(PaymentTransaction transaction, ApproveInquiryResponse response) {
         recoveryCounter.incrementInquiryResult("approve", response.status());
         String idempotentKey = confirmKey(transaction);
         switch (response.status()) {
             case "success" -> paymentCommandService.completeApproveAndComplete(
-                    transaction.getId(), response.externalId(), idempotentKey, LedgerSourceType.PAYMENT_TRANSACTION);
+                    transaction.getId(), response.externalId(), idempotentKey);
             case "failed" -> paymentCommandService.failApproveAndComplete(
                     transaction.getId(), response.externalId(), idempotentKey);
             case "not_found" -> paymentCommandService.failApproveAndComplete(

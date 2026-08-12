@@ -14,6 +14,7 @@ public interface CardAuthenticationRepository extends JpaRepository<CardAuthenti
     Optional<CardAuthentication> findByAuthId(String authId);
     Optional<CardAuthentication> findByCardRequestRef(String cardRequestRef);
     Optional<CardAuthentication> findByApprovalCardRequestRef(String approvalCardRequestRef);
+    Optional<CardAuthentication> findByApprovalId(String approvalId);
     List<CardAuthentication> findByApprovalStatusIn(List<CardApprovalStatus> statuses);
 
     @Query("SELECT a.cardRequestRef FROM CardAuthentication a WHERE a.authStatus = :status")

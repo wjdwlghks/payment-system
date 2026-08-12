@@ -7,6 +7,7 @@ public class PaymentFailureAliasPatterns {
     private static final Map<String, String> ALIASES = Map.of(
             "card_auth", "/v1/authentications",
             "card_approve", "/v1/authentications/",
+            "card_capture", "/v1/approvals/",
             "fds_check", "/v1/fraud-checks"
     );
 

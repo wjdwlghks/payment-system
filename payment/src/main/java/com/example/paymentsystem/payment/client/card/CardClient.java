@@ -48,6 +48,22 @@ public class CardClient {
         }
     }
 
+    public CardCaptureResponse capture(CardCompany company, String approvalId, CardCaptureRequest request) {
+        Limiter.Listener token = acquireOrThrow(company);
+        try {
+            CardCaptureResponse response = restClient(company).post()
+                    .uri("/v1/approvals/{approvalId}/capture", approvalId)
+                    .body(request)
+                    .retrieve()
+                    .body(CardCaptureResponse.class);
+            token.onSuccess();
+            return response;
+        } catch (Exception e) {
+            token.onDropped();
+            throw e;
+        }
+    }
+
     public AuthInquiryResponse inquiryAuth(CardCompany company, String cardRequestRef) {
         return restClient(company).get()
                 .uri("/v1/authentications/inquiries/{cardRequestRef}", cardRequestRef)
@@ -60,6 +76,13 @@ public class CardClient {
                 .uri("/v1/authentications/approvals/inquiries/{cardRequestRef}", cardRequestRef)
                 .retrieve()
                 .body(ApproveInquiryResponse.class);
+    }
+
+    public CaptureInquiryResponse inquiryCapture(CardCompany company, String cardRequestRef) {
+        return restClient(company).get()
+                .uri("/v1/captures/inquiries/{cardRequestRef}", cardRequestRef)
+                .retrieve()
+                .body(CaptureInquiryResponse.class);
     }
 
     private Limiter.Listener acquireOrThrow(CardCompany company) {

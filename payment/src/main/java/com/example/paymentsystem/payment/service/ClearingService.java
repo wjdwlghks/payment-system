@@ -17,9 +17,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -27,87 +25,48 @@ public class ClearingService {
 
     private static final ZoneId BATCH_CODE_ZONE = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter BATCH_CODE_DATE_FORMATTER = DateTimeFormatter.BASIC_ISO_DATE;
+    private static final int CLEARING_LIMIT = 5000;
 
     private final PaymentTransactionRepository paymentTransactionRepository;
     private final ClearingBatchRepository clearingBatchRepository;
     private final ClearingBatchItemRepository clearingBatchItemRepository;
     private final LedgerService ledgerService;
 
+    // 매입이 배치가 되면서 시간 window가 필요 없어졌다 — 미청산 매입을 전부 긁는다.
+    // UNKNOWN 매입이 뒤늦게 확정돼도 다음 청산에서 집히고, ClearingBatchItem.tx_id UNIQUE가 이중청산을 막는다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public ClearingBatchResponse clearing() {
-        Instant windowEnd = Instant.now().minus(10, ChronoUnit.SECONDS);
-        Optional<Instant> optionalWindowStart = windowStart();
-
-        if (optionalWindowStart.isEmpty()) {
-            return ClearingBatchResponse.noTarget(null, windowEnd);
-        }
-
-        Instant windowStart = optionalWindowStart.get();
-
-        // Stage 2 한시: 아직 매입이 없어 승인(APPROVE)을 청산 대상으로 삼는다.
-        // Stage 3에서 매입(CAPTURE)이 생기면 그쪽으로 옮긴다.
-        List<PaymentTransaction> transactions = paymentTransactionRepository.findUnclearedCaptureTransactions(
+        List<PaymentTransaction> transactions = paymentTransactionRepository.findOldestUnclearedTransactions(
                 TransactionStatus.SUCCEEDED,
-                TransactionType.APPROVE,
-                windowStart,
-                windowEnd
+                TransactionType.CAPTURE,
+                PageRequest.of(0, CLEARING_LIMIT)
         );
 
         if (transactions.isEmpty()) {
-            return ClearingBatchResponse.noTarget(windowStart, windowEnd);
+            return ClearingBatchResponse.noTarget(null, Instant.now());
         }
 
-        Long totalAmount = 0L;
-        int itemCount = 0;
+        Instant windowStart = transactions.get(0).getUpdatedAt();
+        Instant windowEnd = transactions.get(transactions.size() - 1).getUpdatedAt().plusMillis(1);
+
+        long totalAmount = 0L;
         for (PaymentTransaction transaction : transactions) {
             totalAmount += transaction.getAmount();
-            itemCount ++;
         }
 
         ClearingBatch batch = clearingBatchRepository.save(
-                new ClearingBatch(
-                        generateBatchCode(),
-                        windowStart,
-                        windowEnd,
-                        totalAmount,
-                        itemCount
-                )
+                new ClearingBatch(generateBatchCode(), windowStart, windowEnd, totalAmount, transactions.size())
         );
 
         for (PaymentTransaction transaction : transactions) {
-            clearingBatchItemRepository.save(
-                    new ClearingBatchItem(
-                            batch,
-                            transaction,
-                            transaction.getAmount()
-                    )
-            );
+            clearingBatchItemRepository.save(new ClearingBatchItem(batch, transaction, transaction.getAmount()));
         }
 
         ledgerService.postClearing(batch.getId(), totalAmount);
-
         batch.markCleared();
 
         return ClearingBatchResponse.created(batch);
-    }
-
-    private Optional<Instant> windowStart() {
-        return clearingBatchRepository
-                .findTop1ByStatusOrderByWindowEndDesc(ClearingBatchStatus.CLEARED)
-                .map(ClearingBatch::getWindowEnd)
-                .or(this::oldestUnclearedCaptureUpdatedAt);
-    }
-
-    private Optional<Instant> oldestUnclearedCaptureUpdatedAt() {
-        return paymentTransactionRepository.findOldestUnclearedTransactions(
-                        TransactionStatus.SUCCEEDED,
-                        TransactionType.APPROVE,
-                        PageRequest.of(0, 1)
-                )
-                .stream()
-                .findFirst()
-                .map(PaymentTransaction::getUpdatedAt);
     }
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)

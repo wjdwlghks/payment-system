@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 public class RecoveryCounter {
 
     private static final List<String> INQUIRY_TYPES =
-            List.of("auth", "fds", "approve");
+            List.of("auth", "fds", "approve", "capture");
 
     private final Map<String, InquiryStats> inquiryStats = new LinkedHashMap<>();
 
