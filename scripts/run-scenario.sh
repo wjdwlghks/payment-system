@@ -204,19 +204,6 @@ print(d['unknownTx'] == 0 and d['staleRequested'] == 0
   elapsed=$(( elapsed + CONVERGE_INTERVAL ))
 done
 
-# ── 5-1. 매입 배치 (승인 -> 매입) ────────────────────────────────────────────
-# 매입은 동기 경로 밖 admin 배치다. 잔량이 0이 될 때까지 반복 실행한 뒤 정산 파일을 만든다.
-log "=== 5-1. Capture run ==="
-for attempt in $(seq 1 30); do
-  CAPTURE_RUN=$(curl -sf -X POST "$PAYMENT_URL/admin/captures/run")
-  PENDING_CAPTURE=$(curl -sf "$PAYMENT_URL/admin/verify/pg-internal" \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['approvedWithoutCapture'])")
-  log "  capture attempt $attempt: $CAPTURE_RUN (approvedWithoutCapture=$PENDING_CAPTURE)"
-  [ "$PENDING_CAPTURE" = "0" ] && break
-  sleep 2
-done
-APPROVED_WITHOUT_CAPTURE=$PENDING_CAPTURE
-
 # ── 6. 정산 파일 생성 ────────────────────────────────────────────────────────
 log "=== 6. Generate settlement files ==="
 SETTLEMENT_FILE_A=$(curl -sf -X POST "$CARD_URL/admin/settlements/generate")
@@ -337,7 +324,7 @@ result = {
     "recovery":    json.loads('''$RECOVERY'''),
     "row_lock":    json.loads('''$ROW_LOCK_STATS'''),
     "pending_webhook_at_k6_end": $PENDING_WEBHOOK_AT_K6_END,
-    "approved_without_capture": $APPROVED_WITHOUT_CAPTURE,
+    "approved_without_capture": $(curl -sf "$PAYMENT_URL/admin/verify/pg-internal" | python3 -c "import sys,json; print(json.load(sys.stdin)['approvedWithoutCapture'])"),
     "verify": {
         "A_pg_internal":  json.loads('''$PG_INTERNAL'''),
         "B_auth_diff":    json.loads('''$AUTH_DIFF'''),
@@ -352,7 +339,6 @@ result = {
         json.loads('''$PG_INTERNAL''')["passed"]
         and json.loads('''$AUTH_DIFF''')["diff_count"] == 0
         and json.loads('''$APPROVE_DIFF''')["diff_count"] == 0
-        and $APPROVED_WITHOUT_CAPTURE == 0
         and json.loads('''$CAPTURE_DIFF''')["diff_count"] == 0
         and json.loads('''$LEDGER''')["passed"]
         and json.loads('''$IDEMPOTENCY''')["passed"]

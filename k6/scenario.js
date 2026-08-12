@@ -80,6 +80,12 @@ export default function () {
   const piStatus = confirmRes.json('status');
   if (piStatus === 'APPROVED') {
     confirmDone.add(1, { cardCompany: company });
+    // 매입은 가맹점이 결제 건별로 요청한다 (PG 배치가 아니다).
+    http.post(
+      `${PAYMENT_BASE}/v1/payment/${paymentKey}/capture`,
+      null,
+      { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'capture', cardCompany: company } }
+    );
   } else if (typeof piStatus === 'string' && piStatus.startsWith('UNKNOWN')) {
     confirmUnknown.add(1, { cardCompany: company });
   } else {

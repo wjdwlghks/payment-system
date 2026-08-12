@@ -2,148 +2,142 @@ package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.*;
 import com.example.paymentsystem.payment.dto.CaptureRequestContext;
-import com.example.paymentsystem.payment.dto.CaptureRunResponse;
-import com.example.paymentsystem.payment.repository.CaptureBatchItemRepository;
-import com.example.paymentsystem.payment.repository.CaptureBatchRepository;
+import com.example.paymentsystem.payment.dto.PaymentApiResult;
+import com.example.paymentsystem.payment.dto.PaymentResponse;
+import com.example.paymentsystem.payment.exception.PaymentValidationException;
+import com.example.paymentsystem.payment.repository.IdempotencyKeyRepository;
 import com.example.paymentsystem.payment.repository.PaymentIntentRepository;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.CannotAcquireLockException;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 매입(CAPTURE) 상태 전이와 원장 기표.
- * 매입은 admin 배치라 사용자 멱등키가 없다 — 중복 매입은 CAPTURE tx의
- * payment_intent_id UNIQUE 제약으로 막는다.
+ * 가맹점이 결제 건별로 요청하는 API라 승인과 같은 멱등키 체계를 쓴다 —
+ * 중복 매입은 멱등키가 앞단에서 걸러내고, 최후 방어선은 CAPTURE tx의 payment_intent_id UNIQUE다.
  */
 @Service
 @RequiredArgsConstructor
 public class CaptureCommandService {
 
-    private static final ZoneId BATCH_CODE_ZONE = ZoneId.of("Asia/Seoul");
-    private static final DateTimeFormatter BATCH_CODE_DATE_FORMATTER = DateTimeFormatter.BASIC_ISO_DATE;
-
     private final PaymentIntentRepository paymentIntentRepository;
     private final PaymentTransactionRepository paymentTransactionRepository;
-    private final CaptureBatchRepository captureBatchRepository;
-    private final CaptureBatchItemRepository captureBatchItemRepository;
+    private final IdempotencyKeyRepository idempotencyKeyRepository;
+    private final IdempotentService idempotentService;
     private final LedgerService ledgerService;
+    private final ObjectMapper objectMapper;
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CaptureBatch createBatch() {
-        return captureBatchRepository.save(new CaptureBatch(generateBatchCode()));
-    }
+    // 병합 트랜잭션: 멱등키 PROCESSING insert + CAPTURE TX insert.
+    // 멱등키 삽입이 상태 가드보다 먼저다 — 반대로 두면 이미 매입된 결제의 재요청이 422에 걸려
+    // 저장해둔 응답을 replay할 기회가 사라진다.
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
+    @Transactional
+    public CaptureRequestContext createCaptureRequestWithIdempotency(String paymentKey) {
+        PaymentIntent paymentIntent = paymentIntentRepository.findByPaymentKey(paymentKey)
+                .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + paymentKey));
 
-    @Transactional(readOnly = true)
-    public List<Long> findTargets(int limit) {
-        return paymentIntentRepository.findCaptureTargetIds(PageRequest.of(0, limit));
-    }
+        IdempotencyKey key = IdempotencyKey.builder()
+                .idempotentKey(IdempotentKeys.paymentCapture(paymentIntent.getMerchantId(), paymentKey))
+                .operation(IdempotencyOperation.PAYMENT_CAPTURE)
+                .status(IdempotentStatus.PROCESSING)
+                .build();
+        idempotencyKeyRepository.saveAndFlush(key);
 
-    // 매입 tx 생성은 건별 커밋 — 중간에 죽어도 이미 만든 tx는 남아 stale REQUESTED 복구가 집어간다.
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CaptureRequestContext createCaptureRequest(Long intentId, Long batchId) {
-        PaymentIntent intent = paymentIntentRepository.findById(intentId)
-                .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + intentId));
-        CaptureBatch batch = captureBatchRepository.findById(batchId)
-                .orElseThrow(() -> new IllegalArgumentException("Capture batch not found: " + batchId));
+        // 여기서 던지면 트랜잭션 전체가 롤백되므로 방금 넣은 키도 함께 사라진다.
+        if (!paymentIntent.isCapturable()) {
+            throw new PaymentValidationException(422, "Payment not capturable: status is " + paymentIntent.getStatus());
+        }
 
-        PaymentTransaction captureTx = paymentTransactionRepository.save(
-                new PaymentTransaction(intent, TransactionType.CAPTURE, intent.getAmount())
+        PaymentTransaction captureTransaction = paymentTransactionRepository.save(
+                new PaymentTransaction(paymentIntent, TransactionType.CAPTURE, paymentIntent.getAmount())
         );
-        captureBatchItemRepository.save(new CaptureBatchItem(batch, captureTx, intent.getAmount()));
 
         return new CaptureRequestContext(
-                captureTx.getId(),
-                intent.getApprovalId(),
-                intent.getAmount(),
-                captureTx.getCardRequestRef(),
-                intent.getCardCompany()
+                captureTransaction.getId(),
+                paymentIntent.getApprovalId(),
+                paymentIntent.getAmount(),
+                captureTransaction.getCardRequestRef(),
+                paymentIntent.getCardCompany()
         );
     }
 
     // 매입 확정 시점에 원장을 기표한다 (승인 시점이 아니라).
+    // 동기 흐름 · inquiry 복구 · 대사 해소가 모두 이 메서드를 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void completeCapture(Long captureTransactionId, String externalId, LedgerSourceType sourceType) {
+    public PaymentApiResult completeCapture(Long captureTransactionId, String externalId, LedgerSourceType sourceType) {
         PaymentTransaction transaction = getTransaction(captureTransactionId);
-        if (transaction.getStatus() != TransactionStatus.REQUESTED
-                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
-            return;
+        if (transaction.getStatus() == TransactionStatus.REQUESTED
+                || transaction.getStatus() == TransactionStatus.UNKNOWN) {
+            transaction.markSucceeded(externalId);
+            ledgerService.postCapture(captureTransactionId, sourceType);
         }
-        transaction.markSucceeded(externalId);
-        ledgerService.postCapture(captureTransactionId, sourceType);
+        return completeIdempotent(transaction);
     }
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void failCapture(Long captureTransactionId, String externalId) {
+    public PaymentApiResult failCapture(Long captureTransactionId, String externalId) {
         PaymentTransaction transaction = getTransaction(captureTransactionId);
-        if (transaction.getStatus() != TransactionStatus.REQUESTED
-                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
-            return;
-        }
-        if (externalId == null) {
-            transaction.markFailWithoutResponse();
-        } else {
-            transaction.markFail(externalId);
-        }
-    }
-
-    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void unknownCapture(Long captureTransactionId) {
-        PaymentTransaction transaction = getTransaction(captureTransactionId);
-        if (transaction.getStatus() != TransactionStatus.REQUESTED) {
-            return;
-        }
-        transaction.markUnknown();
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public CaptureRunResponse completeBatch(Long batchId) {
-        CaptureBatch batch = captureBatchRepository.findById(batchId)
-                .orElseThrow(() -> new IllegalArgumentException("Capture batch not found: " + batchId));
-        List<PaymentTransaction> txs = captureBatchItemRepository.findTransactionsByBatchId(batchId);
-
-        int succeeded = 0, failed = 0, unknown = 0;
-        long succeededAmount = 0L;
-        for (PaymentTransaction tx : txs) {
-            switch (tx.getStatus()) {
-                case SUCCEEDED -> { succeeded++; succeededAmount += tx.getAmount(); }
-                case FAIL -> failed++;
-                default -> unknown++;
+        if (transaction.getStatus() == TransactionStatus.REQUESTED
+                || transaction.getStatus() == TransactionStatus.UNKNOWN) {
+            if (externalId == null) {
+                transaction.markFailWithoutResponse();
+            } else {
+                transaction.markFail(externalId);
             }
         }
-        batch.markCompleted(txs.size(), succeeded, failed, unknown, succeededAmount);
+        return completeIdempotent(transaction);
+    }
 
-        return new CaptureRunResponse(
-                batch.getId(), batch.getBatchCode(),
-                txs.size(), succeeded, failed, unknown, succeededAmount
+    // UNKNOWN은 확정된 결과가 아니므로 멱등키를 완결하지 않는다 — PROCESSING을 유지한 채
+    // InquiryScheduler가 실제 상태를 확정하는 시점에 그 트랜잭션에서 완결된다.
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public PaymentApiResult unknownCapture(Long captureTransactionId) {
+        PaymentTransaction transaction = getTransaction(captureTransactionId);
+        if (transaction.getStatus() == TransactionStatus.REQUESTED) {
+            transaction.markUnknown();
+        }
+        return toApiResult(transaction);
+    }
+
+    // 멱등키는 tx가 속한 PaymentIntent에서 재구성한다 — 복구 경로가 키를 들고 다닐 필요가 없다.
+    private PaymentApiResult completeIdempotent(PaymentTransaction transaction) {
+        PaymentIntent intent = transaction.getPaymentIntent();
+        String responseBody = objectMapper.writeValueAsString(toResponse(transaction));
+        idempotentService.complete(
+                IdempotentKeys.paymentCapture(intent.getMerchantId(), intent.getPaymentKey()),
+                IdempotencyOperation.PAYMENT_CAPTURE,
+                200,
+                responseBody
+        );
+        return new PaymentApiResult(200, responseBody);
+    }
+
+    private PaymentApiResult toApiResult(PaymentTransaction transaction) {
+        return new PaymentApiResult(200, objectMapper.writeValueAsString(toResponse(transaction)));
+    }
+
+    private PaymentResponse toResponse(PaymentTransaction transaction) {
+        PaymentIntent intent = transaction.getPaymentIntent();
+        return new PaymentResponse(
+                intent.getPaymentKey(),
+                intent.getOrderId(),
+                intent.getStatus(),
+                intent.getAmount(),
+                intent.getAuthenticatedAt()
         );
     }
 
     private PaymentTransaction getTransaction(Long transactionId) {
         return paymentTransactionRepository.findById(transactionId)
                 .orElseThrow(() -> new IllegalArgumentException("Transaction not found: " + transactionId));
-    }
-
-    private String generateBatchCode() {
-        String prefix = "CAP-" + LocalDate.now(BATCH_CODE_ZONE).format(BATCH_CODE_DATE_FORMATTER) + "-";
-        int next = captureBatchRepository
-                .findTop1ByBatchCodeStartingWithOrderByBatchCodeDesc(prefix)
-                .map(CaptureBatch::getBatchCode)
-                .map(code -> code.substring(prefix.length()))
-                .map(Integer::parseInt)
-                .orElse(0) + 1;
-        return prefix + String.format("%03d", next);
     }
 }

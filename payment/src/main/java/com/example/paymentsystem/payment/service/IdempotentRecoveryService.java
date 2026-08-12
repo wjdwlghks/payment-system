@@ -4,6 +4,10 @@ import com.example.paymentsystem.payment.domain.IdempotencyKey;
 import com.example.paymentsystem.payment.domain.IdempotentStatus;
 import com.example.paymentsystem.payment.domain.PaymentIntent;
 import com.example.paymentsystem.payment.domain.PaymentIntentStatus;
+import com.example.paymentsystem.payment.domain.PaymentTransaction;
+import com.example.paymentsystem.payment.domain.TransactionStatus;
+import com.example.paymentsystem.payment.domain.TransactionType;
+import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
 import com.example.paymentsystem.payment.repository.IdempotencyKeyRepository;
 import com.example.paymentsystem.payment.repository.PaymentIntentRepository;
 import java.time.Duration;
@@ -22,6 +26,7 @@ public class IdempotentRecoveryService {
 
     private final IdempotencyKeyRepository idempotencyKeyRepository;
     private final PaymentIntentRepository paymentIntentRepository;
+    private final PaymentTransactionRepository paymentTransactionRepository;
     private final IdempotentService idempotentService;
 
     @Transactional(readOnly = true)
@@ -38,6 +43,7 @@ public class IdempotentRecoveryService {
         Optional<RecoveryOutcome> outcome = switch (key.getOperation()) {
             case PAYMENT_REQUEST -> recoverPaymentRequest(key.getIdempotentKey());
             case PAYMENT_APPROVE -> recoverPaymentApprove(key.getIdempotentKey());
+            case PAYMENT_CAPTURE -> recoverPaymentCapture(key.getIdempotentKey());
         };
         if (outcome.isEmpty()) {
             return;
@@ -91,6 +97,28 @@ public class IdempotentRecoveryService {
             case AUTH_FAILED, FDS_FAILED, APPROVE_FAILED -> Optional.of(intentOutcome(pi, 422));
             default -> Optional.of(intentOutcome(pi, 200));
         };
+    }
+
+    // 매입은 PaymentIntent 상태를 바꾸지 않는다(승인 후에도 APPROVED) — CAPTURE tx 상태로 판정한다.
+    private Optional<RecoveryOutcome> recoverPaymentCapture(String idempotentKey) {
+        String[] parts = idempotentKey.split(":", 2);
+        if (parts.length != 2) {
+            return Optional.empty();
+        }
+        Optional<PaymentIntent> intent = paymentIntentRepository.findByPaymentKey(parts[1]);
+        if (intent.isEmpty()) {
+            return Optional.empty();
+        }
+        PaymentIntent pi = intent.get();
+        Optional<PaymentTransaction> succeeded = paymentTransactionRepository
+                .findByPaymentIntentAndTypeAndStatus(pi, TransactionType.CAPTURE, TransactionStatus.SUCCEEDED);
+        if (succeeded.isPresent()) {
+            return Optional.of(intentOutcome(pi, 200));
+        }
+        Optional<PaymentTransaction> failed = paymentTransactionRepository
+                .findByPaymentIntentAndTypeAndStatus(pi, TransactionType.CAPTURE, TransactionStatus.FAIL);
+        // 아직 REQUESTED/UNKNOWN이면 확정 전이다 — InquiryScheduler가 먼저 결론을 내야 한다.
+        return failed.map(tx -> intentOutcome(pi, 200));
     }
 
     private RecoveryOutcome intentOutcome(PaymentIntent intent, int code) {

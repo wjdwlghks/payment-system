@@ -27,6 +27,8 @@ public class PaymentService {
     private final IdempotentService idempotentService;
     private final ExternalCallExecutor externalCallExecutor;
     private final ApproveExecutionService approveExecutionService;
+    private final CaptureCommandService captureCommandService;
+    private final CaptureExecutionService captureExecutionService;
     private final CardClient cardClient;
     private final FdsClient fdsClient;
     private final ObjectMapper objectMapper;
@@ -76,6 +78,22 @@ public class PaymentService {
 
         String idempotentKey = IdempotentKeys.paymentApprove(approveContext.merchantId(), approveContext.paymentKey());
         return approveExecutionService.approve(approveContext, idempotentKey);
+    }
+
+    public PaymentApiResult capturePayment(String paymentKey) {
+
+        CaptureRequestContext captureContext;
+        try {
+            captureContext = captureCommandService.createCaptureRequestWithIdempotency(paymentKey);
+        } catch (PaymentValidationException e) {
+            return errorResult(e.getStatusCode(), e.getMessage());
+        } catch (DataIntegrityViolationException e) {
+            PaymentIntent paymentIntent = paymentCommandService.getPaymentIntent(paymentKey);
+            String existingKey = IdempotentKeys.paymentCapture(paymentIntent.getMerchantId(), paymentKey);
+            return replayOrReject(existingKey, IdempotencyOperation.PAYMENT_CAPTURE, null, "Processing capture");
+        }
+
+        return captureExecutionService.capture(captureContext);
     }
 
     private PaymentApiResult handleAuthResponse(

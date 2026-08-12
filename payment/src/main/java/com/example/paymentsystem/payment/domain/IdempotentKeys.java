@@ -17,4 +17,8 @@ public final class IdempotentKeys {
     public static String paymentApprove(String merchantId, String paymentKey) {
         return merchantId + ":" + paymentKey;
     }
+
+    public static String paymentCapture(String merchantId, String paymentKey) {
+        return merchantId + ":" + paymentKey;
+    }
 }

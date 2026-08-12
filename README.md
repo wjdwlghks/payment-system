@@ -19,7 +19,8 @@
 ## 주요 구현
 
 - **결제 플로우** — `POST /v1/payment`(인증+FDS) → `POST /v1/payment/{key}/approve`(승인) →
-  `POST /admin/captures/run`(매입, 배치).
+  `POST /v1/payment/{key}/capture`(매입). 승인까지가 사용자 결제완료이고,
+  매입은 가맹점이 건별로 요청하는 별도 호출이다.
   환불은 `POST /v1/payment/refund`, 승인/매입 취소는 `POST /v1/payment/{key}/cancel`.
 
 - **UNKNOWN 상태 + 자동 복구** — 외부 호출 응답이 유실되면 성공/실패로 단정하지 않고

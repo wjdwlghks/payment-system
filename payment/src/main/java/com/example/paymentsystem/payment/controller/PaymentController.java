@@ -33,4 +33,12 @@ public class PaymentController {
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.body());
     }
+
+    @PostMapping("/{paymentKey}/capture")
+    public ResponseEntity<String> capturePayment(@PathVariable String paymentKey) {
+        PaymentApiResult result = paymentService.capturePayment(paymentKey);
+        return ResponseEntity.status(result.statusCode())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(result.body());
+    }
 }

@@ -119,6 +119,11 @@ public class PaymentIntent {
         this.status = PaymentIntentStatus.APPROVE_REQUESTED;
     }
 
+    /** 매입 선행조건 — 승인이 확정된 결제. 이미 매입됐는지는 멱등키가 가려낸다. */
+    public boolean isCapturable() {
+        return this.status == PaymentIntentStatus.APPROVED;
+    }
+
     public void markApproveFailed() {
         this.status = PaymentIntentStatus.APPROVE_FAILED;
     }

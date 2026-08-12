@@ -38,4 +38,13 @@ public class PaymentApiController {
                 .onStatus(status -> !status.is2xxSuccessful(), (req, res) -> {})
                 .toEntity(String.class);
     }
+
+    @PostMapping("/{paymentKey}/capture")
+    public ResponseEntity<String> capturePayment(@PathVariable String paymentKey) {
+        return paymentRestClient.post()
+                .uri("/v1/payment/{paymentKey}/capture", paymentKey)
+                .retrieve()
+                .onStatus(status -> !status.is2xxSuccessful(), (req, res) -> {})
+                .toEntity(String.class);
+    }
 }
