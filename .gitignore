@@ -6,6 +6,7 @@ target/
 *.iml
 notes.md
 CLAUDE.md
+refactor-plan.md
 recon-files
 results
 

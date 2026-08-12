@@ -79,11 +79,4 @@ public class CardAuthorization {
         this.captureStatus = CardCaptureStatus.SUCCESS;
         this.capturedAt = capturedAt;
     }
-
-    public void markVoided() {
-        if (this.captureStatus == CardCaptureStatus.SUCCESS) {
-            throw new IllegalStateException("Cannot void: already captured");
-        }
-        this.authStatus = CardAuthStatus.VOIDED;
-    }
 }

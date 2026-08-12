@@ -35,12 +35,4 @@ public class AuthController {
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.body());
     }
-
-    @PostMapping("/{authId}/void")
-    public ResponseEntity<String> voidAuth(@PathVariable String authId) {
-        ApiResult result = authService.voidAuth(authId);
-        return ResponseEntity.status(result.statusCode())
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(result.body());
-    }
 }

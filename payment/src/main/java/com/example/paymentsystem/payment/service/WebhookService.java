@@ -1,11 +1,9 @@
 package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.PaymentIntent;
-import com.example.paymentsystem.payment.domain.Refund;
 import com.example.paymentsystem.payment.domain.WebhookOutbox;
 import com.example.paymentsystem.payment.domain.WebhookOutboxStatus;
 import com.example.paymentsystem.payment.dto.PaymentWebhookRequest;
-import com.example.paymentsystem.payment.dto.RefundWebhookRequest;
 import com.example.paymentsystem.payment.repository.WebhookOutboxRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,15 +21,12 @@ import java.util.UUID;
 public class WebhookService {
 
     private static final String PAYMENT_STATUS_CHANGED = "PAYMENT_STATUS_CHANGED";
-    private static final String REFUND_STATUS_CHANGED = "REFUND_STATUS_CHANGED";
     private static final String STAGE_AUTH = "AUTH";
     private static final String STAGE_FDS = "FDS";
     private static final String STAGE_CAPTURE = "CAPTURE";
     private static final String WEBHOOK_READY_FOR_CONFIRM = "ready";
     private static final String WEBHOOK_DONE = "done";
     private static final String WEBHOOK_FAILED = "failed";
-    private static final String WEBHOOK_REFUND_SUCCEEDED = "succeeded";
-    private static final String WEBHOOK_REFUND_FAILED = "failed";
 
 
     private final ObjectMapper objectMapper;
@@ -62,16 +57,6 @@ public class WebhookService {
         save(paymentIntent, WEBHOOK_FAILED, STAGE_CAPTURE);
     }
 
-    @Transactional(propagation = Propagation.MANDATORY)
-    public void saveRefundSucceeded(Refund refund) {
-        saveRefund(refund, WEBHOOK_REFUND_SUCCEEDED);
-    }
-
-    @Transactional(propagation = Propagation.MANDATORY)
-    public void saveRefundFailed(Refund refund) {
-        saveRefund(refund, WEBHOOK_REFUND_FAILED);
-    }
-
 
     private void save(PaymentIntent paymentIntent, String webhookEventType, String failStage) {
         String eventId = UUID.randomUUID().toString();
@@ -94,35 +79,6 @@ public class WebhookService {
                 eventId,
                 paymentIntent.getPaymentKey(),
                 PAYMENT_STATUS_CHANGED,
-                payload,
-                Instant.now()
-        );
-
-        repository.save(outbox);
-    }
-
-    private void saveRefund(Refund refund, String webhookEventType) {
-        String eventId = UUID.randomUUID().toString();
-        PaymentIntent paymentIntent = refund.getPaymentIntent();
-
-        RefundWebhookRequest request = new RefundWebhookRequest(
-                eventId,
-                webhookEventType,
-                refund.getRefundKey(),
-                paymentIntent.getPaymentKey(),
-                paymentIntent.getOrderId(),
-                paymentIntent.getMerchantId(),
-                refund.getAmount(),
-                refund.getStatus().name(),
-                Instant.now()
-        );
-
-        String payload = objectMapper.writeValueAsString(request);
-
-        WebhookOutbox outbox = new WebhookOutbox(
-                eventId,
-                refund.getRefundKey(),
-                REFUND_STATUS_CHANGED,
                 payload,
                 Instant.now()
         );

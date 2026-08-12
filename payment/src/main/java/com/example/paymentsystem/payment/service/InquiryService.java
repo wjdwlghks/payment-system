@@ -11,11 +11,8 @@ import com.example.paymentsystem.payment.domain.IdempotentKeys;
 import com.example.paymentsystem.payment.domain.LedgerSourceType;
 import com.example.paymentsystem.payment.domain.PaymentIntent;
 import com.example.paymentsystem.payment.domain.PaymentTransaction;
-import com.example.paymentsystem.payment.domain.Refund;
 import com.example.paymentsystem.payment.domain.TransactionStatus;
-import com.example.paymentsystem.payment.dto.RefundInquiryResponse;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
-import com.example.paymentsystem.payment.repository.RefundRepository;
 import java.time.Duration;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
@@ -31,12 +28,10 @@ public class InquiryService {
     private static final Duration STALE_REQUESTED_THRESHOLD = Duration.ofSeconds(60);
 
     private final PaymentTransactionRepository paymentTransactionRepository;
-    private final RefundRepository refundRepository;
     private final CardClient cardClient;
     private final FdsClient fdsClient;
     private final ExternalCallExecutor externalCallExecutor;
     private final PaymentCommandService paymentCommandService;
-    private final RefundCommandService refundCommandService;
     private final RecoveryCounter recoveryCounter;
 
     @Transactional(readOnly = true)
@@ -91,38 +86,6 @@ public class InquiryService {
                 () -> paymentCommandService.failCaptureAndComplete(
                         transaction.getId(), null, confirmKey(transaction))
         );
-    }
-
-    public void inquiryRefund(PaymentTransaction transaction) {
-        recoveryCounter.incrementInquiryTotal("refund");
-        CardCompany company = transaction.getPaymentIntent().getCardCompany();
-        Refund refund = refundRepository.findByTransactionId(transaction.getId())
-                .orElseThrow(() -> new IllegalArgumentException("Refund not found for transaction: " + transaction.getId()));
-        String refundKey = refund.getRefundKey();
-        String cardRequestRef = transaction.getCardRequestRef();
-        externalCallExecutor.executeVoid(
-                () -> cardClient.inquiryRefund(company, cardRequestRef),
-                response -> handleRefundInquiry(transaction, refund, response),
-                () -> {},
-                () -> refundCommandService.failRefundAndComplete(
-                        transaction.getId(), refundKey, null, refundIdempotentKey(transaction, refundKey))
-        );
-    }
-
-    private void handleRefundInquiry(PaymentTransaction transaction, Refund refund, RefundInquiryResponse response) {
-        recoveryCounter.incrementInquiryResult("refund", response.status());
-        String idempotentKey = refundIdempotentKey(transaction, refund.getRefundKey());
-        switch (response.status()) {
-            case "success" -> refundCommandService.completeRefundAndComplete(
-                    transaction.getId(), refund.getRefundKey(), refund.getAmount(),
-                    response.externalId(), idempotentKey, LedgerSourceType.REFUND_TRANSACTION
-            );
-            case "failed" -> refundCommandService.failRefundAndComplete(
-                    transaction.getId(), refund.getRefundKey(), response.externalId(), idempotentKey);
-            case "not_found" -> refundCommandService.failRefundAndComplete(
-                    transaction.getId(), refund.getRefundKey(), null, idempotentKey);
-            case "in_progress" -> {}
-        }
     }
 
     private void handleAuthInquiry(PaymentTransaction transaction, AuthInquiryResponse response) {
@@ -181,9 +144,5 @@ public class InquiryService {
     private String confirmKey(PaymentTransaction transaction) {
         PaymentIntent intent = transaction.getPaymentIntent();
         return IdempotentKeys.paymentConfirm(intent.getMerchantId(), intent.getPaymentKey());
-    }
-
-    private String refundIdempotentKey(PaymentTransaction transaction, String refundKey) {
-        return IdempotentKeys.paymentRefund(transaction.getPaymentIntent().getPaymentKey(), refundKey);
     }
 }

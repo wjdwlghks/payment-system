@@ -1,14 +1,11 @@
 package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.domain.IdempotencyKey;
-import com.example.paymentsystem.payment.domain.IdempotentKeys;
 import com.example.paymentsystem.payment.domain.IdempotentStatus;
 import com.example.paymentsystem.payment.domain.PaymentIntent;
 import com.example.paymentsystem.payment.domain.PaymentIntentStatus;
-import com.example.paymentsystem.payment.domain.Refund;
 import com.example.paymentsystem.payment.repository.IdempotencyKeyRepository;
 import com.example.paymentsystem.payment.repository.PaymentIntentRepository;
-import com.example.paymentsystem.payment.repository.RefundRepository;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -22,11 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class IdempotentRecoveryService {
 
     private static final Duration STALE_PROCESSING_THRESHOLD = Duration.ofSeconds(90);
-    private static final String REFUND_KEY_SEPARATOR = IdempotentKeys.REFUND_SEPARATOR;
 
     private final IdempotencyKeyRepository idempotencyKeyRepository;
     private final PaymentIntentRepository paymentIntentRepository;
-    private final RefundRepository refundRepository;
     private final IdempotentService idempotentService;
 
     @Transactional(readOnly = true)
@@ -43,7 +38,6 @@ public class IdempotentRecoveryService {
         Optional<RecoveryOutcome> outcome = switch (key.getOperation()) {
             case PAYMENT_REQUEST -> recoverPaymentRequest(key.getIdempotentKey());
             case PAYMENT_CONFIRM -> recoverPaymentConfirm(key.getIdempotentKey());
-            case PAYMENT_REFUND -> recoverPaymentRefund(key.getIdempotentKey());
         };
         if (outcome.isEmpty()) {
             return;
@@ -99,38 +93,11 @@ public class IdempotentRecoveryService {
         };
     }
 
-    private Optional<RecoveryOutcome> recoverPaymentRefund(String idempotentKey) {
-        int idx = idempotentKey.indexOf(REFUND_KEY_SEPARATOR);
-        if (idx < 0) {
-            return Optional.empty();
-        }
-        String refundKey = idempotentKey.substring(idx + REFUND_KEY_SEPARATOR.length());
-        Optional<Refund> refund = refundRepository.findByRefundKey(refundKey);
-        if (refund.isEmpty()) {
-            return Optional.empty();
-        }
-        Refund r = refund.get();
-        return switch (r.getStatus()) {
-            case REQUESTED, UNKNOWN -> Optional.empty();
-            case FAIL -> Optional.of(refundOutcome(r, 422));
-            case SUCCEEDED -> Optional.of(refundOutcome(r, 200));
-        };
-    }
-
     private RecoveryOutcome intentOutcome(PaymentIntent intent, int code) {
         String body = String.format(
                 "{\"recovered\":true,\"paymentKey\":\"%s\",\"status\":\"%s\"}",
                 intent.getPaymentKey(),
                 intent.getStatus().name()
-        );
-        return new RecoveryOutcome(code, body);
-    }
-
-    private RecoveryOutcome refundOutcome(Refund refund, int code) {
-        String body = String.format(
-                "{\"recovered\":true,\"refundKey\":\"%s\",\"status\":\"%s\"}",
-                refund.getRefundKey(),
-                refund.getStatus().name()
         );
         return new RecoveryOutcome(code, body);
     }

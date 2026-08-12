@@ -44,13 +44,13 @@ public class ReconciliationValidationService {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final String GLOBAL = "GLOBAL";
     private static final List<TransactionType> RECON_TYPES =
-            List.of(TransactionType.CAPTURE, TransactionType.REFUND);
+            List.of(TransactionType.CAPTURE);
     private static final List<TransactionStatus> RECON_STATUSES =
             List.of(TransactionStatus.SUCCEEDED, TransactionStatus.FAIL);
     private static final List<TransactionStatus> UNKNOWN_STATUS =
             List.of(TransactionStatus.UNKNOWN);
     private static final List<LedgerEntryType> RECON_LEDGER_TYPES =
-            List.of(LedgerEntryType.CAPTURE, LedgerEntryType.REFUND, LedgerEntryType.CLEARING, LedgerEntryType.SETTLEMENT);
+            List.of(LedgerEntryType.CAPTURE, LedgerEntryType.CLEARING, LedgerEntryType.SETTLEMENT);
 
     private final ReconBatchRepository reconBatchRepository;
     private final StagingSettlementRepository stagingSettlementRepository;
@@ -163,7 +163,7 @@ public class ReconciliationValidationService {
         long fileNet = computeFileNet(stagings);
         long cardCompanyNet = txs.stream()
                 .filter(t -> t.getStatus() == TransactionStatus.SUCCEEDED)
-                .mapToLong(t -> t.getType() == TransactionType.CAPTURE ? t.getAmount() : -t.getAmount())
+                .mapToLong(PaymentTransaction::getAmount)
                 .sum();
         if (cardCompanyNet != fileNet) {
             results.add(ReconciliationResult.aggregate(batch, cardCompanyNet, fileNet));
@@ -222,10 +222,7 @@ public class ReconciliationValidationService {
             if (s == null) {
                 continue;
             }
-            SettlementType expectedType = tx.getType() == TransactionType.CAPTURE
-                    ? SettlementType.CAPTURE
-                    : SettlementType.REFUND;
-            if (s.getTxType() != expectedType) {
+            if (s.getTxType() != SettlementType.CAPTURE) {
                 continue;
             }
             if (s.getTxStatus() == SettlementStatus.APPROVED
@@ -235,17 +232,9 @@ public class ReconciliationValidationService {
 
             try {
                 if (s.getTxStatus() == SettlementStatus.APPROVED) {
-                    if (tx.getType() == TransactionType.CAPTURE) {
-                        unknownReconciler.reconcileCaptureApproved(tx.getId(), s.getApprovalNo());
-                    } else {
-                        unknownReconciler.reconcileRefundApproved(tx.getId(), s.getApprovalNo());
-                    }
+                    unknownReconciler.reconcileCaptureApproved(tx.getId(), s.getApprovalNo());
                 } else {
-                    if (tx.getType() == TransactionType.CAPTURE) {
-                        unknownReconciler.reconcileCaptureDeclined(tx.getId(), s.getApprovalNo());
-                    } else {
-                        unknownReconciler.reconcileRefundDeclined(tx.getId(), s.getApprovalNo());
-                    }
+                    unknownReconciler.reconcileCaptureDeclined(tx.getId(), s.getApprovalNo());
                 }
                 resolved++;
             } catch (Exception e) {
@@ -273,7 +262,7 @@ public class ReconciliationValidationService {
             if (s.getTxStatus() != SettlementStatus.APPROVED) {
                 continue;
             }
-            net += s.getTxType() == SettlementType.CAPTURE ? s.getAmount() : -s.getAmount();
+            net += s.getAmount();
         }
         return net;
     }

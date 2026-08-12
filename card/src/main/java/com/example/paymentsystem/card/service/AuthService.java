@@ -7,8 +7,6 @@ import com.example.paymentsystem.card.dto.ApiResult;
 import com.example.paymentsystem.card.dto.AuthInquiryResponse;
 import com.example.paymentsystem.card.dto.AuthRequest;
 import com.example.paymentsystem.card.dto.AuthResponse;
-import com.example.paymentsystem.card.dto.ErrorResponse;
-import com.example.paymentsystem.card.dto.VoidAuthResponse;
 import com.example.paymentsystem.card.repository.CardAuthorizationRepository;
 
 import java.time.Instant;
@@ -64,30 +62,5 @@ public class AuthService {
         }
 
         return new AuthInquiryResponse("in_progress", cardAuth.getAuthId(), cardAuth.getAuthorizedAt());
-    }
-
-    @Transactional
-    public ApiResult voidAuth(String authId) {
-        CardAuthorization cardAuth = repository.findByAuthId(authId)
-                .orElse(null);
-        if (cardAuth == null) {
-            return errorResult(404, "Authorization not found: " + authId);
-        }
-        if (cardAuth.getAuthStatus() == CardAuthStatus.VOIDED) {
-            String responseBody = objectMapper.writeValueAsString(new VoidAuthResponse(true, authId));
-            return new ApiResult(200, responseBody);
-        }
-        try {
-            cardAuth.markVoided();
-        } catch (IllegalStateException e) {
-            return errorResult(409, e.getMessage());
-        }
-        String responseBody = objectMapper.writeValueAsString(new VoidAuthResponse(true, authId));
-        return new ApiResult(200, responseBody);
-    }
-
-    private ApiResult errorResult(int statusCode, String message) {
-        String responseBody = objectMapper.writeValueAsString(new ErrorResponse(message));
-        return new ApiResult(statusCode, responseBody);
     }
 }

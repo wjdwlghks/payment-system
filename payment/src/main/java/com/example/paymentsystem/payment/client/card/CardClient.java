@@ -1,7 +1,6 @@
 package com.example.paymentsystem.payment.client.card;
 
 import com.example.paymentsystem.payment.domain.CardCompany;
-import com.example.paymentsystem.payment.dto.RefundInquiryResponse;
 import com.netflix.concurrency.limits.Limiter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -49,37 +48,6 @@ public class CardClient {
         }
     }
 
-    public CardRefundResponse refund(CardCompany company, String captureId, CardRefundRequest request) {
-        Limiter.Listener token = acquireOrThrow(company);
-        try {
-            CardRefundResponse response = restClient(company).post()
-                    .uri("/v1/authorizations/{captureId}/refund", captureId)
-                    .body(request)
-                    .retrieve()
-                    .body(CardRefundResponse.class);
-            token.onSuccess();
-            return response;
-        } catch (Exception e) {
-            token.onDropped();
-            throw e;
-        }
-    }
-
-    public CardVoidResponse voidAuth(CardCompany company, String authId) {
-        Limiter.Listener token = acquireOrThrow(company);
-        try {
-            CardVoidResponse response = restClient(company).post()
-                    .uri("/v1/authorizations/{authId}/void", authId)
-                    .retrieve()
-                    .body(CardVoidResponse.class);
-            token.onSuccess();
-            return response;
-        } catch (Exception e) {
-            token.onDropped();
-            throw e;
-        }
-    }
-
     public AuthInquiryResponse inquiryAuth(CardCompany company, String cardRequestRef) {
         return restClient(company).get()
                 .uri("/v1/authorizations/inquiries/{cardRequestRef}", cardRequestRef)
@@ -92,13 +60,6 @@ public class CardClient {
                 .uri("/v1/authorizations/captures/inquiries/{cardRequestRef}", cardRequestRef)
                 .retrieve()
                 .body(CaptureInquiryResponse.class);
-    }
-
-    public RefundInquiryResponse inquiryRefund(CardCompany company, String cardRequestRef) {
-        return restClient(company).get()
-                .uri("/v1/authorizations/refund/inquiries/{cardRequestRef}", cardRequestRef)
-                .retrieve()
-                .body(RefundInquiryResponse.class);
     }
 
     private Limiter.Listener acquireOrThrow(CardCompany company) {

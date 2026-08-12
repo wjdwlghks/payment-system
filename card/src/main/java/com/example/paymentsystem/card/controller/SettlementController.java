@@ -2,10 +2,7 @@ package com.example.paymentsystem.card.controller;
 
 import com.example.paymentsystem.card.domain.CardAuthorization;
 import com.example.paymentsystem.card.domain.CardCaptureStatus;
-import com.example.paymentsystem.card.domain.CardRefund;
-import com.example.paymentsystem.card.domain.CardRefundStatus;
 import com.example.paymentsystem.card.repository.CardAuthorizationRepository;
-import com.example.paymentsystem.card.repository.CardRefundRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -34,7 +31,6 @@ public class SettlementController {
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_INSTANT;
 
     private final CardAuthorizationRepository authorizationRepository;
-    private final CardRefundRepository refundRepository;
 
     @Value("${settlement.output-dir:/recon-files}")
     private String outputDir;
@@ -51,7 +47,6 @@ public class SettlementController {
                 writer.newLine();
 
                 writeCaptures(writer);
-                writeRefunds(writer);
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -75,23 +70,6 @@ public class SettlementController {
                     "CAPTURE",
                     txStatus,
                     ""
-            );
-        }
-    }
-
-    private void writeRefunds(BufferedWriter writer) throws IOException {
-        List<CardRefund> refunds = refundRepository.findAll();
-
-        for (CardRefund refund : refunds) {
-            String txStatus = refund.getStatus() == CardRefundStatus.SUCCESS ? "APPROVED" : "DECLINED";
-            writeLine(writer,
-                    refund.getCardRequestRef(),
-                    refund.getRefundId(),
-                    refund.getAmount(),
-                    refund.getRefundedAt(),
-                    "REFUND",
-                    txStatus,
-                    refund.getCaptureId()
             );
         }
     }

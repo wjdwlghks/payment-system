@@ -15,7 +15,6 @@ public class PaymentFailureConfig {
         Map<String, Pattern> patterns = Map.of(
                 "card_auth",    Pattern.compile("^POST /v1/authorizations$"),
                 "card_capture", Pattern.compile("^POST /v1/authorizations/[^/]+/capture$"),
-                "card_refund",  Pattern.compile("^POST /v1/authorizations/[^/]+/refund$"),
                 "fds_check",    Pattern.compile("^POST /v1/fraud-checks$")
         );
         return new FailureAliasPatterns(patterns);

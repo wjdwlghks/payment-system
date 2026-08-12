@@ -38,12 +38,6 @@ public class PaymentIntent {
     @Column(nullable = false)
     private Long amount;
 
-    @Column(name = "refunded_amount", nullable = false)
-    private Long refundedAmount;
-
-    @Column(name = "total_fee_refunded", nullable = false)
-    private Long totalFeeRefunded;
-
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private PaymentIntentStatus status;
@@ -73,8 +67,6 @@ public class PaymentIntent {
         this.orderId = orderId;
         this.merchantId = merchantId;
         this.amount = amount;
-        this.refundedAmount = 0L;
-        this.totalFeeRefunded = 0L;
         this.status = PaymentIntentStatus.AUTH_REQUESTED;
         this.cardCompany = cardCompany;
     }
@@ -143,18 +135,5 @@ public class PaymentIntent {
         this.status = PaymentIntentStatus.UNKNOWN_CAPTURE;
     }
 
-    public void addRefundedAmount(Long amount) {
-        this.refundedAmount += amount;
-    }
-
-    public void addFeeRefunded(long fee) {
-        this.totalFeeRefunded += fee;
-    }
-
-    public void markRefunded() { this.status = PaymentIntentStatus.REFUNDED; }
-
-    public void markPartiallyRefunded() { this.status = PaymentIntentStatus.PARTIALLY_REFUNDED; }
-
-    public void markCancelled() { this.status = PaymentIntentStatus.CANCELLED; }
 
 }

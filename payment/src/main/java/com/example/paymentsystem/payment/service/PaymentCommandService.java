@@ -398,19 +398,6 @@ public class PaymentCommandService {
         );
     }
 
-    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class}, maxAttempts = 3)
-    @Transactional
-    public void cancelAuth(String paymentKey) {
-        PaymentIntent intent = paymentIntentRepository.findByPaymentKey(paymentKey)
-                .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + paymentKey));
-        if (intent.getStatus() == PaymentIntentStatus.CANCELLED) return;
-        if (intent.getStatus() != PaymentIntentStatus.AUTH_READY
-                && intent.getStatus() != PaymentIntentStatus.FDS_READY) {
-            throw new IllegalStateException("Cannot cancel auth: status is " + intent.getStatus());
-        }
-        intent.markCancelled();
-    }
-
     @Transactional
     public PaymentIntent getPaymentIntent(String paymentKey) {
         return paymentIntentRepository.findByPaymentKey(paymentKey)

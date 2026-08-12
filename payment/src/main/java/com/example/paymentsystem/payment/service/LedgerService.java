@@ -48,53 +48,6 @@ public class LedgerService {
         post(LedgerPostingType.CAPTURE, sourceType, captureTransactionId.toString(), entries);
     }
 
-    @Transactional(propagation = Propagation.MANDATORY)
-    public void postRefund(Long refundTransactionId, LedgerSourceType sourceType) {
-        PaymentTransaction transaction = paymentTransactionRepository.findById(refundTransactionId)
-                .orElseThrow();
-        PaymentIntent intent = transaction.getPaymentIntent();
-        String merchantId = intent.getMerchantId();
-
-        Account cardReceivable = globalAccount(AccountType.CARD_NETWORK_RECEIVABLE);
-        Account merchantPending = merchantAccount(AccountType.MERCHANT_PENDING, merchantId);
-        Account feeRevenue = globalAccount(AccountType.FEE_REVENUE);
-
-        long refundAmount = transaction.getAmount();
-
-        PaymentTransaction captureTx = paymentTransactionRepository
-                .findByPaymentIntentAndTypeAndStatus(intent, TransactionType.CAPTURE, TransactionStatus.SUCCEEDED)
-                .orElseThrow(() -> new IllegalStateException("No SUCCEEDED CAPTURE tx found for intent"));
-
-        long originalFee = ledgerRepository.findEntryAmountByPostingAndAccount(
-                LedgerPostingType.CAPTURE, captureTx.getId().toString(),
-                AccountType.FEE_REVENUE, LedgerDirection.CREDIT
-        );
-        long captureAmount = captureTx.getAmount();
-
-        long proportionalFee;
-        if (intent.getRefundedAmount().equals(captureAmount)) {
-            proportionalFee = originalFee - intent.getTotalFeeRefunded();
-        } else {
-            proportionalFee = refundAmount * originalFee / captureAmount;
-        }
-        if (proportionalFee < 0) proportionalFee = 0;
-
-        intent.addFeeRefunded(proportionalFee);
-
-        long merchantBurden = refundAmount - proportionalFee;
-
-        List<LedgerEntry> entries = new ArrayList<>();
-        if (merchantBurden > 0) {
-            entries.add(new LedgerEntry(merchantPending, LedgerDirection.DEBIT, merchantBurden, LedgerEntryType.REFUND));
-        }
-        if (proportionalFee > 0) {
-            entries.add(new LedgerEntry(feeRevenue, LedgerDirection.DEBIT, proportionalFee, LedgerEntryType.REFUND));
-        }
-        entries.add(new LedgerEntry(cardReceivable, LedgerDirection.CREDIT, refundAmount, LedgerEntryType.REFUND));
-
-        post(LedgerPostingType.REFUND, sourceType, refundTransactionId.toString(), entries);
-    }
-
     // CLEARING: 카드사와 대사(reconciliation)가 끝난 net 금액에서 카드사 매입 수수료만 확정 반영.
     // 은행 계좌 입금은 SETTLEMENT의 몫이라 여기서는 CARD_NETWORK_RECEIVABLE을 건드리지 않는다.
     @Transactional(propagation = Propagation.MANDATORY)

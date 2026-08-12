@@ -95,9 +95,6 @@ public class StagingSettlement {
         if (txStatus == null) {
             throw new IllegalArgumentException("txStatus must not be null");
         }
-        if (txType == SettlementType.REFUND && (originalApprovalNo == null || originalApprovalNo.isBlank())) {
-            throw new IllegalArgumentException("originalApprovalNo must be present for REFUND rows");
-        }
         this.reconBatch = reconBatch;
         this.approvalNo = approvalNo;
         this.cardRequestRef = cardRequestRef;

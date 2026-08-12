@@ -124,12 +124,7 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     SELECT COUNT(pt) FROM PaymentTransaction pt
     WHERE pt.type = com.example.paymentsystem.payment.domain.TransactionType.CAPTURE
       AND pt.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
-      AND pt.paymentIntent.status NOT IN (
-          com.example.paymentsystem.payment.domain.PaymentIntentStatus.DONE,
-          com.example.paymentsystem.payment.domain.PaymentIntentStatus.REFUNDED,
-          com.example.paymentsystem.payment.domain.PaymentIntentStatus.PARTIALLY_REFUNDED,
-          com.example.paymentsystem.payment.domain.PaymentIntentStatus.CANCELLED
-      )
+      AND pt.paymentIntent.status <> com.example.paymentsystem.payment.domain.PaymentIntentStatus.DONE
     """)
     long countCaptureSucceededWithoutDone();
 }
