@@ -18,7 +18,6 @@ import com.example.paymentsystem.payment.repository.PaymentTransactionRepository
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.retry.annotation.Retryable;
@@ -342,28 +341,29 @@ public class PaymentCommandService {
     }
 
     // 병합 트랜잭션: PaymentIntent 조회+상태검증 + idempotency PROCESSING insert + PaymentIntent/APPROVE TX 갱신.
-    // FDS_PASSED가 아니면 idempotency key를 만들지 않고 PaymentValidationException(422)만 던진다.
-    // 유니크 제약 위반 시 DataIntegrityViolationException이 전파되며 전체 롤백 — 호출부에서 기존 키를 재조회한다.
+    // 유니크 제약 위반 시 DataIntegrityViolationException이 전파되며 전체 롤백 — 호출부에서 기존 키를 재조회해
+    // replay(완결됨) 또는 409(진행 중)를 돌려준다. FDS_PASSED가 아니면 422를 던지고 키까지 함께 롤백된다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public ApproveRequestContext createApproveRequestWithIdempotency(String paymentKey) {
         PaymentIntent paymentIntent = paymentIntentRepository.findByPaymentKey(paymentKey)
                 .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + paymentKey));
 
-        if (paymentIntent.getStatus() != PaymentIntentStatus.FDS_PASSED) {
-            throw new PaymentValidationException(422, "Payment not approvable: status is " + paymentIntent.getStatus());
-        }
-
         String idempotentKey = IdempotentKeys.paymentApprove(paymentIntent.getMerchantId(), paymentKey);
-        String requestHash = DigestUtils.sha256Hex(idempotentKey);
 
+        // 멱등키 삽입이 상태 가드보다 먼저다. 반대로 두면 이미 승인된 결제의 재요청이
+        // 상태 가드(422)에 먼저 걸려, 저장해둔 응답을 replay할 기회가 사라진다.
         IdempotencyKey key = IdempotencyKey.builder()
                 .idempotentKey(idempotentKey)
                 .operation(IdempotencyOperation.PAYMENT_APPROVE)
-                .requestHash(requestHash)
                 .status(IdempotentStatus.PROCESSING)
                 .build();
         idempotencyKeyRepository.saveAndFlush(key);
+
+        // 여기서 던지면 트랜잭션 전체가 롤백되므로 방금 넣은 키도 함께 사라진다 — 고아 키가 남지 않는다.
+        if (!paymentIntent.isApprovable()) {
+            throw new PaymentValidationException(422, "Payment not approvable: status is " + paymentIntent.getStatus());
+        }
 
         paymentIntent.markApproveRequested();
 

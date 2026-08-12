@@ -107,9 +107,14 @@ public class PaymentIntent {
         this.status = PaymentIntentStatus.FDS_PASSED;
     }
 
+    /** 승인 선행조건. 도메인 불변식과 API 검증이 같은 판정을 쓰도록 여기 한 곳에 둔다. */
+    public boolean isApprovable() {
+        return this.status == PaymentIntentStatus.FDS_PASSED;
+    }
+
     public void markApproveRequested() {
-        if (this.status != PaymentIntentStatus.FDS_PASSED) {
-            throw new IllegalStateException("Cannot start capture: intent status is " + this.status);
+        if (!isApprovable()) {
+            throw new IllegalStateException("Cannot start approve: intent status is " + this.status);
         }
         this.status = PaymentIntentStatus.APPROVE_REQUESTED;
     }

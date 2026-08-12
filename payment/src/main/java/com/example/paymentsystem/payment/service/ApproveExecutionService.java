@@ -17,7 +17,7 @@ public class ApproveExecutionService {
     private final CardClient cardClient;
     private final ObjectMapper objectMapper;
 
-    public PaymentApiResult approveWithRetry(ApproveRequestContext approveContext, String idempotentKey) {
+    public PaymentApiResult approve(ApproveRequestContext approveContext, String idempotentKey) {
         CardApproveRequest approveRequest = new CardApproveRequest(
                 approveContext.cardRequestRef(),
                 approveContext.orderId(),

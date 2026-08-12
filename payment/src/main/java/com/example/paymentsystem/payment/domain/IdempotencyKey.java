@@ -43,7 +43,8 @@ public class IdempotencyKey {
     @Column(name = "idempotent_key", nullable = false)
     private String idempotentKey;
 
-    @Column(name = "request_hash", nullable = false, length = 64)
+    // 키 자체가 요청을 온전히 규정하는 operation(승인)은 비워 둔다 — 지문 찍을 추가 본문이 없다.
+    @Column(name = "request_hash", length = 64)
     private String requestHash;
 
     @Enumerated(EnumType.STRING)

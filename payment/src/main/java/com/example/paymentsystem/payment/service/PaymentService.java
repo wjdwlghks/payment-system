@@ -70,13 +70,12 @@ public class PaymentService {
             return errorResult(e.getStatusCode(), e.getMessage());
         } catch (DataIntegrityViolationException e) {
             PaymentIntent paymentIntent = paymentCommandService.getPaymentIntent(paymentKey);
-            String idempotentKey = IdempotentKeys.paymentApprove(paymentIntent.getMerchantId(), paymentKey);
-            String requestHash = DigestUtils.sha256Hex(idempotentKey);
-            return replayOrReject(idempotentKey, IdempotencyOperation.PAYMENT_APPROVE, requestHash, "Processing approve");
+            String existingKey = IdempotentKeys.paymentApprove(paymentIntent.getMerchantId(), paymentKey);
+            return replayOrReject(existingKey, IdempotencyOperation.PAYMENT_APPROVE, null, "Processing approve");
         }
 
         String idempotentKey = IdempotentKeys.paymentApprove(approveContext.merchantId(), approveContext.paymentKey());
-        return approveExecutionService.approveWithRetry(approveContext, idempotentKey);
+        return approveExecutionService.approve(approveContext, idempotentKey);
     }
 
     private PaymentApiResult handleAuthResponse(
@@ -127,7 +126,8 @@ public class PaymentService {
                 .orElseThrow(() -> new IllegalStateException(
                         "Idempotency key not found after constraint violation: " + idempotentKey));
 
-        if (!existing.getRequestHash().equals(requestHash)) {
+        // requestHash가 없는 operation(승인)은 키 자체가 요청을 규정하므로 지문 비교를 건너뛴다.
+        if (requestHash != null && !requestHash.equals(existing.getRequestHash())) {
             return errorResult(409, "Request Hash Mismatch");
         }
 
