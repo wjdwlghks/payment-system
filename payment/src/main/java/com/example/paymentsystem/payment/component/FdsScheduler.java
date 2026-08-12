@@ -16,14 +16,14 @@ public class FdsScheduler {
     private final FdsExecutionService fdsExecutionService;
 
     @Scheduled(fixedDelay = 10_000)
-    public void checkAuthReadyPayment() {
-        List<PaymentIntent> paymentIntents = fdsExecutionService.getAuthReadyPaymentIntents();
+    public void checkAuthenticatedPayment() {
+        List<PaymentIntent> paymentIntents = fdsExecutionService.getAuthenticatedPaymentIntents();
 
         for (PaymentIntent paymentIntent : paymentIntents) {
             try {
                 fdsExecutionService.checkFds(paymentIntent);
             } catch (Exception e) {
-                log.error("Failed to run FDS for auth-ready payment. paymentIntentId={}", paymentIntent.getId(), e);
+                log.error("Failed to run FDS for authenticated payment. paymentIntentId={}", paymentIntent.getId(), e);
             }
         }
     }

@@ -88,7 +88,7 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
 
     @Query("""
     SELECT COUNT(pi) FROM PaymentIntent pi
-    WHERE pi.status = com.example.paymentsystem.payment.domain.PaymentIntentStatus.DONE
+    WHERE pi.status = com.example.paymentsystem.payment.domain.PaymentIntentStatus.APPROVED
     AND NOT EXISTS (
         SELECT pt FROM PaymentTransaction pt
         WHERE pt.paymentIntent = pi
@@ -102,7 +102,7 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     SELECT COUNT(pt) FROM PaymentTransaction pt
     WHERE pt.type = com.example.paymentsystem.payment.domain.TransactionType.APPROVE
       AND pt.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
-      AND pt.paymentIntent.status <> com.example.paymentsystem.payment.domain.PaymentIntentStatus.DONE
+      AND pt.paymentIntent.status <> com.example.paymentsystem.payment.domain.PaymentIntentStatus.APPROVED
     """)
     long countApproveSucceededWithoutDone();
 
@@ -123,7 +123,7 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     /** 승인은 끝났는데 아직 매입이 안 됐다 — 매입 배치 실행 전에는 정상값이다(판정에 쓰지 않는다). */
     @Query("""
     SELECT COUNT(pi) FROM PaymentIntent pi
-    WHERE pi.status = com.example.paymentsystem.payment.domain.PaymentIntentStatus.DONE
+    WHERE pi.status = com.example.paymentsystem.payment.domain.PaymentIntentStatus.APPROVED
     AND EXISTS (
         SELECT ap FROM PaymentTransaction ap
         WHERE ap.paymentIntent = pi

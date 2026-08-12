@@ -69,7 +69,7 @@ export default function () {
 
   // 2) Confirm (Capture)
   const confirmRes = http.post(
-    `${PAYMENT_BASE}/v1/payment/${paymentKey}/confirm`,
+    `${PAYMENT_BASE}/v1/payment/${paymentKey}/approve`,
     null,
     { headers: { 'Content-Type': 'application/json' }, tags: { phase: 'confirm', cardCompany: company } }
   );
@@ -78,7 +78,7 @@ export default function () {
   if (confirmRes.status >= 400) { confirmFailedOther.add(1, { cardCompany: company }); return; }
 
   const piStatus = confirmRes.json('status');
-  if (piStatus === 'DONE') {
+  if (piStatus === 'APPROVED') {
     confirmDone.add(1, { cardCompany: company });
   } else if (typeof piStatus === 'string' && piStatus.startsWith('UNKNOWN')) {
     confirmUnknown.add(1, { cardCompany: company });

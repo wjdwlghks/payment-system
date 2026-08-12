@@ -33,25 +33,25 @@ public class ConvergenceController {
         long unknownTx          = txRepository.countByStatus(TransactionStatus.UNKNOWN);
         long staleRequested     = txRepository.countByStatusAndUpdatedAtBefore(
                 TransactionStatus.REQUESTED, Instant.now().minus(STALE_TX_THRESHOLD));
-        // AUTH_READY is the transient recovery state (fds-scheduler continues it to FDS_READY).
-        // FDS_READY is a resting state awaiting merchant confirm — reported but not a blocker.
-        long authReady          = intentRepository.countByStatus(PaymentIntentStatus.AUTH_READY);
-        long fdsReady           = intentRepository.countByStatus(PaymentIntentStatus.FDS_READY);
+        // AUTHENTICATED is the transient recovery state (fds-scheduler continues it to FDS_PASSED).
+        // FDS_PASSED is a resting state awaiting the merchant approve call — reported but not a blocker.
+        long authenticated          = intentRepository.countByStatus(PaymentIntentStatus.AUTHENTICATED);
+        long fdsPassed           = intentRepository.countByStatus(PaymentIntentStatus.FDS_PASSED);
         long pendingWebhook     = outboxRepository.countByStatus(WebhookOutboxStatus.PENDING);
         long processingIdempotencyKeys = idempotencyKeyRepository.countByStatus(IdempotentStatus.PROCESSING);
 
         boolean converged = unknownTx == 0 && staleRequested == 0
-                && authReady == 0 && processingIdempotencyKeys == 0;
+                && authenticated == 0 && processingIdempotencyKeys == 0;
 
         return new ConvergenceStatus(
-                unknownTx, staleRequested, authReady, fdsReady, pendingWebhook, processingIdempotencyKeys, converged);
+                unknownTx, staleRequested, authenticated, fdsPassed, pendingWebhook, processingIdempotencyKeys, converged);
     }
 
     public record ConvergenceStatus(
             long unknownTx,
             long staleRequested,
-            long authReady,
-            long fdsReady,
+            long authenticated,
+            long fdsPassed,
             long pendingWebhook,
             long processingIdempotencyKeys,
             boolean converged

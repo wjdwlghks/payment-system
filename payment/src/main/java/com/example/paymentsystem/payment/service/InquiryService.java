@@ -86,7 +86,7 @@ public class InquiryService {
                 response -> handleApproveInquiry(transaction, response),
                 () -> {},
                 () -> paymentCommandService.failApproveAndComplete(
-                        transaction.getId(), null, confirmKey(transaction))
+                        transaction.getId(), null, approveKey(transaction))
         );
     }
 
@@ -149,7 +149,7 @@ public class InquiryService {
 
     private void handleApproveInquiry(PaymentTransaction transaction, ApproveInquiryResponse response) {
         recoveryCounter.incrementInquiryResult("approve", response.status());
-        String idempotentKey = confirmKey(transaction);
+        String idempotentKey = approveKey(transaction);
         switch (response.status()) {
             case "success" -> paymentCommandService.completeApproveAndComplete(
                     transaction.getId(), response.externalId(), idempotentKey);
@@ -167,8 +167,8 @@ public class InquiryService {
         return IdempotentKeys.paymentRequest(intent.getMerchantId(), intent.getOrderId());
     }
 
-    private String confirmKey(PaymentTransaction transaction) {
+    private String approveKey(PaymentTransaction transaction) {
         PaymentIntent intent = transaction.getPaymentIntent();
-        return IdempotentKeys.paymentConfirm(intent.getMerchantId(), intent.getPaymentKey());
+        return IdempotentKeys.paymentApprove(intent.getMerchantId(), intent.getPaymentKey());
     }
 }

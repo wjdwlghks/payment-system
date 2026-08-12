@@ -19,16 +19,16 @@ public class PaymentController {
     private final PaymentService paymentService;
 
     @PostMapping
-    public ResponseEntity<String> requestPayment(@RequestBody PaymentRequest request) {
-        PaymentApiResult result = paymentService.requestPayment(request);
+    public ResponseEntity<String> authenticationPayment(@RequestBody PaymentRequest request) {
+        PaymentApiResult result = paymentService.authenticationPayment(request);
         return ResponseEntity.status(result.statusCode())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.body());
     }
 
-    @PostMapping("/{paymentKey}/confirm")
-    public ResponseEntity<String> confirmPayment(@PathVariable String paymentKey) {
-        PaymentApiResult result = paymentService.confirmPayment(paymentKey);
+    @PostMapping("/{paymentKey}/approve")
+    public ResponseEntity<String> approvePayment(@PathVariable String paymentKey) {
+        PaymentApiResult result = paymentService.approvePayment(paymentKey);
         return ResponseEntity.status(result.statusCode())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.body());

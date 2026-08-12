@@ -31,7 +31,7 @@ public class PaymentService {
     private final FdsClient fdsClient;
     private final ObjectMapper objectMapper;
 
-    public PaymentApiResult requestPayment(PaymentRequest request) {
+    public PaymentApiResult authenticationPayment(PaymentRequest request) {
 
         String idempotentKey = IdempotentKeys.paymentRequest(request.merchantId(), request.orderId());
         String requestHash = DigestUtils.sha256Hex(
@@ -61,7 +61,7 @@ public class PaymentService {
         );
     }
 
-    public PaymentApiResult confirmPayment(String paymentKey) {
+    public PaymentApiResult approvePayment(String paymentKey) {
 
         ApproveRequestContext approveContext;
         try {
@@ -70,12 +70,12 @@ public class PaymentService {
             return errorResult(e.getStatusCode(), e.getMessage());
         } catch (DataIntegrityViolationException e) {
             PaymentIntent paymentIntent = paymentCommandService.getPaymentIntent(paymentKey);
-            String idempotentKey = IdempotentKeys.paymentConfirm(paymentIntent.getMerchantId(), paymentKey);
+            String idempotentKey = IdempotentKeys.paymentApprove(paymentIntent.getMerchantId(), paymentKey);
             String requestHash = DigestUtils.sha256Hex(idempotentKey);
-            return replayOrReject(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, requestHash, "Processing confirm");
+            return replayOrReject(idempotentKey, IdempotencyOperation.PAYMENT_APPROVE, requestHash, "Processing approve");
         }
 
-        String idempotentKey = IdempotentKeys.paymentConfirm(approveContext.merchantId(), approveContext.paymentKey());
+        String idempotentKey = IdempotentKeys.paymentApprove(approveContext.merchantId(), approveContext.paymentKey());
         return approveExecutionService.approveWithRetry(approveContext, idempotentKey);
     }
 

@@ -57,12 +57,12 @@ export default function () {
   if (authRes.status === 200) {
     const pk = authRes.json('paymentKey');
     const st = authRes.json('status');
-    if (pk && st === 'FDS_READY') {
+    if (pk && st === 'FDS_PASSED') {
       const confirmRes = http.post(
-        `${PAYMENT}/v1/payment/${pk}/confirm`, null,
+        `${PAYMENT}/v1/payment/${pk}/approve`, null,
         { ...JSON_HDR, timeout: '30s' }
       );
-      success = confirmRes.status === 200 && confirmRes.json('status') === 'DONE';
+      success = confirmRes.status === 200 && confirmRes.json('status') === 'APPROVED';
     }
   }
 

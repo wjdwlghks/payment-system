@@ -83,8 +83,8 @@ public class PaymentIntent {
         this.updatedAt = Instant.now();
     }
 
-    public void markAuthReady(Instant authenticatedAt) {
-        this.status = PaymentIntentStatus.AUTH_READY;
+    public void markAuthenticated(Instant authenticatedAt) {
+        this.status = PaymentIntentStatus.AUTHENTICATED;
         this.authenticatedAt = authenticatedAt;
     }
 
@@ -93,7 +93,7 @@ public class PaymentIntent {
     }
 
     public void markFdsRequested() {
-        if (this.status != PaymentIntentStatus.AUTH_READY) {
+        if (this.status != PaymentIntentStatus.AUTHENTICATED) {
             throw new IllegalStateException("Cannot start FDS: intent status is " + this.status);
         }
         this.status = PaymentIntentStatus.FDS_REQUESTED;
@@ -103,12 +103,12 @@ public class PaymentIntent {
         this.status = PaymentIntentStatus.FDS_FAILED;
     }
 
-    public void markFdsReady() {
-        this.status = PaymentIntentStatus.FDS_READY;
+    public void markFdsPassed() {
+        this.status = PaymentIntentStatus.FDS_PASSED;
     }
 
     public void markApproveRequested() {
-        if (this.status != PaymentIntentStatus.FDS_READY) {
+        if (this.status != PaymentIntentStatus.FDS_PASSED) {
             throw new IllegalStateException("Cannot start capture: intent status is " + this.status);
         }
         this.status = PaymentIntentStatus.APPROVE_REQUESTED;
@@ -118,8 +118,8 @@ public class PaymentIntent {
         this.status = PaymentIntentStatus.APPROVE_FAILED;
     }
 
-    public void markDone(String approvalId) {
-        this.status = PaymentIntentStatus.DONE;
+    public void markApproved(String approvalId) {
+        this.status = PaymentIntentStatus.APPROVED;
         this.approvalId = approvalId;
     }
 

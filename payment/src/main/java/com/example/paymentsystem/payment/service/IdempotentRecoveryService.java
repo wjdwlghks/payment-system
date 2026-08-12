@@ -37,7 +37,7 @@ public class IdempotentRecoveryService {
     public void recover(IdempotencyKey key) {
         Optional<RecoveryOutcome> outcome = switch (key.getOperation()) {
             case PAYMENT_REQUEST -> recoverPaymentRequest(key.getIdempotentKey());
-            case PAYMENT_CONFIRM -> recoverPaymentConfirm(key.getIdempotentKey());
+            case PAYMENT_APPROVE -> recoverPaymentApprove(key.getIdempotentKey());
         };
         if (outcome.isEmpty()) {
             return;
@@ -64,14 +64,14 @@ public class IdempotentRecoveryService {
         PaymentIntent pi = intent.get();
         // request phase now spans AUTH + FDS
         return switch (pi.getStatus()) {
-            case AUTH_REQUESTED, UNKNOWN_AUTH, AUTH_READY,
+            case AUTH_REQUESTED, UNKNOWN_AUTH, AUTHENTICATED,
                  FDS_REQUESTED, UNKNOWN_FDS -> Optional.empty();
             case AUTH_FAILED, FDS_FAILED -> Optional.of(intentOutcome(pi, 422));
             default -> Optional.of(intentOutcome(pi, 200));
         };
     }
 
-    private Optional<RecoveryOutcome> recoverPaymentConfirm(String idempotentKey) {
+    private Optional<RecoveryOutcome> recoverPaymentApprove(String idempotentKey) {
         String[] parts = idempotentKey.split(":", 2);
         if (parts.length != 2) {
             return Optional.empty();
@@ -83,10 +83,10 @@ public class IdempotentRecoveryService {
         }
         PaymentIntent pi = intent.get();
         PaymentIntentStatus status = pi.getStatus();
-        // confirm phase now performs APPROVE only; FDS_READY means approval not yet started
+        // 승인 단계는 APPROVE만 수행한다; FDS_PASSED는 승인이 아직 시작되지 않았다는 뜻
         return switch (status) {
-            case AUTH_REQUESTED, UNKNOWN_AUTH, AUTH_READY,
-                 FDS_REQUESTED, UNKNOWN_FDS, FDS_READY,
+            case AUTH_REQUESTED, UNKNOWN_AUTH, AUTHENTICATED,
+                 FDS_REQUESTED, UNKNOWN_FDS, FDS_PASSED,
                  APPROVE_REQUESTED, UNKNOWN_APPROVE -> Optional.empty();
             case AUTH_FAILED, FDS_FAILED, APPROVE_FAILED -> Optional.of(intentOutcome(pi, 422));
             default -> Optional.of(intentOutcome(pi, 200));

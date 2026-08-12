@@ -22,7 +22,7 @@ public class SchedulerAdminController {
         inquiryScheduler.inquiryUnknownPayment();
         inquiryScheduler.inquiryStaleRequested();
         inquiryScheduler.recoverStaleIdempotencyKeys();
-        fdsScheduler.checkAuthReadyPayment();
+        fdsScheduler.checkAuthenticatedPayment();
         webhookScheduler.webhook();
     }
 }

@@ -87,7 +87,7 @@ public class PaymentCommandService {
                 && transaction.getStatus() != TransactionStatus.UNKNOWN) {
             return toResponse(paymentIntent);
         }
-        paymentIntent.markAuthReady(authenticatedAt);
+        paymentIntent.markAuthenticated(authenticatedAt);
         transaction.markSucceeded(externalId);
         return toResponse(paymentIntent);
     }
@@ -104,7 +104,7 @@ public class PaymentCommandService {
             throw new IllegalStateException(
                     "completeAuthAndRequestFds called on already-terminal transaction: " + transaction.getStatus());
         }
-        paymentIntent.markAuthReady(authenticatedAt);
+        paymentIntent.markAuthenticated(authenticatedAt);
         transaction.markSucceeded(externalId);
 
         paymentIntent.markFdsRequested();
@@ -247,9 +247,9 @@ public class PaymentCommandService {
                 && transaction.getStatus() != TransactionStatus.UNKNOWN) {
             return toResponse(paymentIntent);
         }
-        paymentIntent.markFdsReady();
+        paymentIntent.markFdsPassed();
         transaction.markSucceeded(externalId);
-        webhookService.saveReadyForConfirm(paymentIntent);
+        webhookService.saveReadyForApprove(paymentIntent);
         return toResponse(paymentIntent);
     }
 
@@ -261,9 +261,9 @@ public class PaymentCommandService {
         PaymentTransaction transaction = getTransaction(transactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() == TransactionStatus.REQUESTED || transaction.getStatus() == TransactionStatus.UNKNOWN) {
-            paymentIntent.markFdsReady();
+            paymentIntent.markFdsPassed();
             transaction.markSucceeded(externalId);
-            webhookService.saveReadyForConfirm(paymentIntent);
+            webhookService.saveReadyForApprove(paymentIntent);
         }
         return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, toResponse(paymentIntent));
     }
@@ -284,7 +284,7 @@ public class PaymentCommandService {
     }
 
     // 병합 트랜잭션: failApprove + idempotent complete.
-    // confirm phase가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
+    // 승인 단계가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentApiResult failApproveAndComplete(Long transactionId, String externalId, String idempotentKey) {
@@ -295,7 +295,7 @@ public class PaymentCommandService {
             markFail(transaction, externalId);
             webhookService.saveApproveFailed(paymentIntent);
         }
-        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, toResponse(paymentIntent));
+        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_APPROVE, toResponse(paymentIntent));
     }
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
@@ -307,25 +307,25 @@ public class PaymentCommandService {
                 && transaction.getStatus() != TransactionStatus.UNKNOWN) {
             return toResponse(paymentIntent);
         }
-        paymentIntent.markDone(externalId);
+        paymentIntent.markApproved(externalId);
         transaction.markSucceeded(externalId);
         webhookService.savePaymentComplete(paymentIntent);
         return toResponse(paymentIntent);
     }
 
     // 병합 트랜잭션: completeApprove + idempotent complete.
-    // confirm phase가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
+    // 승인 단계가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentApiResult completeApproveAndComplete(Long approveTransactionId, String externalId, String idempotentKey) {
         PaymentTransaction transaction = getTransaction(approveTransactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() == TransactionStatus.REQUESTED || transaction.getStatus() == TransactionStatus.UNKNOWN) {
-            paymentIntent.markDone(externalId);
+            paymentIntent.markApproved(externalId);
             transaction.markSucceeded(externalId);
             webhookService.savePaymentComplete(paymentIntent);
         }
-        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, toResponse(paymentIntent));
+        return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_APPROVE, toResponse(paymentIntent));
     }
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
@@ -341,8 +341,8 @@ public class PaymentCommandService {
         return toResponse(paymentIntent);
     }
 
-    // 병합 트랜잭션: PaymentIntent 조회+상태검증 + idempotency PROCESSING insert + PaymentIntent/CAPTURE TX 갱신.
-    // FDS_READY가 아니면 idempotency key를 만들지 않고 PaymentValidationException(422)만 던진다.
+    // 병합 트랜잭션: PaymentIntent 조회+상태검증 + idempotency PROCESSING insert + PaymentIntent/APPROVE TX 갱신.
+    // FDS_PASSED가 아니면 idempotency key를 만들지 않고 PaymentValidationException(422)만 던진다.
     // 유니크 제약 위반 시 DataIntegrityViolationException이 전파되며 전체 롤백 — 호출부에서 기존 키를 재조회한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
@@ -350,16 +350,16 @@ public class PaymentCommandService {
         PaymentIntent paymentIntent = paymentIntentRepository.findByPaymentKey(paymentKey)
                 .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + paymentKey));
 
-        if (paymentIntent.getStatus() != PaymentIntentStatus.FDS_READY) {
-            throw new PaymentValidationException(422, "Payment not confirmable: status is " + paymentIntent.getStatus());
+        if (paymentIntent.getStatus() != PaymentIntentStatus.FDS_PASSED) {
+            throw new PaymentValidationException(422, "Payment not approvable: status is " + paymentIntent.getStatus());
         }
 
-        String idempotentKey = IdempotentKeys.paymentConfirm(paymentIntent.getMerchantId(), paymentKey);
+        String idempotentKey = IdempotentKeys.paymentApprove(paymentIntent.getMerchantId(), paymentKey);
         String requestHash = DigestUtils.sha256Hex(idempotentKey);
 
         IdempotencyKey key = IdempotencyKey.builder()
                 .idempotentKey(idempotentKey)
-                .operation(IdempotencyOperation.PAYMENT_CONFIRM)
+                .operation(IdempotencyOperation.PAYMENT_APPROVE)
                 .requestHash(requestHash)
                 .status(IdempotentStatus.PROCESSING)
                 .build();

@@ -13,9 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Recovery path: continues FDS for intents stranded at AUTH_READY
+ * Recovery path: continues FDS for intents stranded at AUTHENTICATED
  * (auth resolved via inquiry but the request-phase FDS check never ran).
- * Mirrors how the capture step used to be continued for FDS_READY intents.
+ * Mirrors how the capture step used to be continued for FDS_PASSED intents.
  *
  * <p>이 경로가 FDS를 종료 상태로 만들면 request phase가 끝나므로, 그 트랜잭션에서
  * PAYMENT_REQUEST 멱등키까지 함께 완결한다.
@@ -30,8 +30,8 @@ public class FdsExecutionService {
     private final FdsClient fdsClient;
 
     @Transactional(readOnly = true)
-    public List<PaymentIntent> getAuthReadyPaymentIntents() {
-        return paymentIntentRepository.findTop300ByStatusOrderByUpdatedAtAsc(PaymentIntentStatus.AUTH_READY);
+    public List<PaymentIntent> getAuthenticatedPaymentIntents() {
+        return paymentIntentRepository.findTop300ByStatusOrderByUpdatedAtAsc(PaymentIntentStatus.AUTHENTICATED);
     }
 
     public void checkFds(PaymentIntent paymentIntent) {

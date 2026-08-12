@@ -20,10 +20,10 @@ public interface PaymentIntentRepository extends JpaRepository<PaymentIntent, Lo
 
     long countByStatus(PaymentIntentStatus status);
 
-    /** 매입 대상: 승인이 확정(DONE)됐는데 아직 매입 tx가 하나도 없는 결제. */
+    /** 매입 대상: 승인이 확정(APPROVED)됐는데 아직 매입 tx가 하나도 없는 결제. */
     @Query("""
     SELECT pi.id FROM PaymentIntent pi
-    WHERE pi.status = com.example.paymentsystem.payment.domain.PaymentIntentStatus.DONE
+    WHERE pi.status = com.example.paymentsystem.payment.domain.PaymentIntentStatus.APPROVED
     AND EXISTS (
         SELECT ap FROM PaymentTransaction ap
         WHERE ap.paymentIntent = pi

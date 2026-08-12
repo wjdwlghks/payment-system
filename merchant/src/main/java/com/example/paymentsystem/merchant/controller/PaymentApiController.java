@@ -30,10 +30,10 @@ public class PaymentApiController {
                 .toEntity(String.class);
     }
 
-    @PostMapping("/{paymentKey}/confirm")
-    public ResponseEntity<String> confirmPayment(@PathVariable String paymentKey) {
+    @PostMapping("/{paymentKey}/approve")
+    public ResponseEntity<String> approvePayment(@PathVariable String paymentKey) {
         return paymentRestClient.post()
-                .uri("/v1/payment/{paymentKey}/confirm", paymentKey)
+                .uri("/v1/payment/{paymentKey}/approve", paymentKey)
                 .retrieve()
                 .onStatus(status -> !status.is2xxSuccessful(), (req, res) -> {})
                 .toEntity(String.class);
