@@ -28,9 +28,17 @@ const CARD_B  = __ENV.CARD_B  || 'http://localhost:8085';
 const FDS     = __ENV.FDS     || 'http://localhost:8083';
 
 const JSON_HDR = { headers: { 'Content-Type': 'application/json' } };
-// 3개 룰 × triggerProbability=0.027(기본) → 단계별 장애율 ~8%, 전체 iteration 장애 경험률 ~24%
+// 단계마다 4개 룰이 각각 독립적으로 확률 판정을 하고, 발동한 것 중 등록 순서상 첫 번째가 적용된다
+// ("4종 중 하나를 랜덤 선택"이 아니다):
+//   payment 클라이언트  CONNECT_FAILURE                             ← 요청이 나가기 전
+//   card / fds 서버     TIMEOUT_BEFORE / TIMEOUT_AFTER / ERROR_500
+// prob=0.027이면 단계별 실효 장애율 ≈ 1-0.973^4 = 10.4%,
+// 4단계(인증/FDS/승인/매입)를 전부 무사통과할 확률 ≈ 0.896^4 = 64% → 결제 3건 중 1건 이상이 장애를 겪는다.
 const PROB      = parseFloat(__ENV.PROB) || 0.027;
-const REMAINING = 9999;
+// 트리거 여부와 무관하게 요청마다 차감되고 0이 되면 룰이 제거된다.
+// payment 클라이언트/FDS 룰은 카드사로 분산되지 않고 전량을 받으므로, 부족하면
+// 테스트 후반부에 장애가 조용히 안 걸린다 — 사실상 무제한으로 둔다.
+const REMAINING = parseInt(__ENV.REMAINING) || 10_000_000;
 
 // TPS 기반 부하 — 목표 초당 iteration(결제) 수를 직접 지정
 const TPS      = parseInt(__ENV.TPS)      || 30;
@@ -94,7 +102,7 @@ export function setup() {
   injectConnectFailure('card_approve');
   injectConnectFailure('card_capture');
 
-  console.log(`[setup] failures injected on card-a/card-b/fds (prob=${PROB} each, 3 types x 4 stages)`);
+  console.log(`[setup] failures injected (prob=${PROB} per rule, 4 rules x 4 stages -> ~10.4% per stage)`);
 }
 
 // ── teardown: 전체 해제 ──────────────────────────────────────
