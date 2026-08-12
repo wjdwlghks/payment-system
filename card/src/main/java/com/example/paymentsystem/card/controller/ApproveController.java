@@ -1,9 +1,9 @@
 package com.example.paymentsystem.card.controller;
 
-import com.example.paymentsystem.card.dto.CaptureRequest;
+import com.example.paymentsystem.card.dto.ApproveRequest;
 import com.example.paymentsystem.card.dto.ApiResult;
-import com.example.paymentsystem.card.service.CaptureService;
-import com.example.paymentsystem.card.service.CaptureCommandService;
+import com.example.paymentsystem.card.service.ApproveService;
+import com.example.paymentsystem.card.service.ApproveCommandService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -15,27 +15,27 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/v1/authorizations")
+@RequestMapping("/v1/authentications")
 @RequiredArgsConstructor
-public class CaptureController {
+public class ApproveController {
 
-    private final CaptureService captureService;
-    private final CaptureCommandService captureCommandService;
+    private final ApproveService approveService;
+    private final ApproveCommandService approveCommandService;
 
-    @PostMapping("/{authorizationId}/capture")
-    public ResponseEntity<String> capture(
-            @PathVariable String authorizationId,
-            @RequestBody CaptureRequest request
+    @PostMapping("/{authenticationId}/approve")
+    public ResponseEntity<String> approve(
+            @PathVariable String authenticationId,
+            @RequestBody ApproveRequest request
     ) {
-        ApiResult result = captureService.capture(authorizationId, request);
+        ApiResult result = approveService.approve(authenticationId, request);
         return ResponseEntity.status(result.statusCode())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.body());
     }
 
-    @GetMapping("/captures/inquiries/{cardRequestRef}")
+    @GetMapping("/approvals/inquiries/{cardRequestRef}")
     public ResponseEntity<String> inquire(@PathVariable String cardRequestRef) {
-        ApiResult result = captureCommandService.inquire(cardRequestRef);
+        ApiResult result = approveCommandService.inquire(cardRequestRef);
         return ResponseEntity.status(result.statusCode())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.body());

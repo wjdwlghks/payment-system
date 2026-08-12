@@ -5,8 +5,8 @@ import java.util.Set;
 
 public class PaymentFailureAliasPatterns {
     private static final Map<String, String> ALIASES = Map.of(
-            "card_auth", "/v1/authorizations",
-            "card_capture", "/v1/authorizations/",
+            "card_auth", "/v1/authentications",
+            "card_approve", "/v1/authentications/",
             "fds_check", "/v1/fraud-checks"
     );
 

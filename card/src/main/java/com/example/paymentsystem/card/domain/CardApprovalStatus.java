@@ -1,6 +1,6 @@
 package com.example.paymentsystem.card.domain;
 
-public enum CardCaptureStatus {
+public enum CardApprovalStatus {
     NOT_STARTED,
     IN_PROGRESS,
     SUCCESS,

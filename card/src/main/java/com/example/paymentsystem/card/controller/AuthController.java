@@ -14,15 +14,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/v1/authorizations")
+@RequestMapping("/v1/authentications")
 @RequiredArgsConstructor
 public class AuthController {
 
     private final AuthService authService;
 
     @PostMapping
-    public ResponseEntity<String> authorize(@RequestBody AuthRequest request) {
-        ApiResult result = authService.authorize(request);
+    public ResponseEntity<String> authenticate(@RequestBody AuthRequest request) {
+        ApiResult result = authService.authenticate(request);
         return ResponseEntity.status(result.statusCode())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.body());

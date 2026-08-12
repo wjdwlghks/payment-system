@@ -26,7 +26,7 @@ public class PaymentService {
     private final PaymentCommandService paymentCommandService;
     private final IdempotentService idempotentService;
     private final ExternalCallExecutor externalCallExecutor;
-    private final CaptureExecutionService captureExecutionService;
+    private final ApproveExecutionService approveExecutionService;
     private final CardClient cardClient;
     private final FdsClient fdsClient;
     private final ObjectMapper objectMapper;
@@ -48,12 +48,11 @@ public class PaymentService {
         CardAuthRequest authRequest = new CardAuthRequest(
                 authContext.cardRequestRef(),
                 authContext.orderId(),
-                authContext.merchantId(),
-                authContext.amount()
+                authContext.merchantId()
         );
 
         return externalCallExecutor.execute(
-                () -> cardClient.authorize(request.cardCompany(), authRequest),
+                () -> cardClient.authenticate(request.cardCompany(), authRequest),
                 response -> handleAuthResponse(idempotentKey, authContext, response),
                 // UNKNOWN은 확정된 결과가 아니므로 멱등키를 완결하지 않는다 — PROCESSING을 유지한 채
                 // InquiryScheduler가 실제 상태를 확정하는 시점에 그 트랜잭션에서 완결된다.
@@ -64,9 +63,9 @@ public class PaymentService {
 
     public PaymentApiResult confirmPayment(String paymentKey) {
 
-        CaptureRequestContext captureContext;
+        ApproveRequestContext approveContext;
         try {
-            captureContext = paymentCommandService.createCaptureRequestWithIdempotency(paymentKey);
+            approveContext = paymentCommandService.createApproveRequestWithIdempotency(paymentKey);
         } catch (PaymentValidationException e) {
             return errorResult(e.getStatusCode(), e.getMessage());
         } catch (DataIntegrityViolationException e) {
@@ -76,8 +75,8 @@ public class PaymentService {
             return replayOrReject(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, requestHash, "Processing confirm");
         }
 
-        String idempotentKey = IdempotentKeys.paymentConfirm(captureContext.merchantId(), captureContext.paymentKey());
-        return captureExecutionService.captureWithRetry(captureContext, idempotentKey);
+        String idempotentKey = IdempotentKeys.paymentConfirm(approveContext.merchantId(), approveContext.paymentKey());
+        return approveExecutionService.approveWithRetry(approveContext, idempotentKey);
     }
 
     private PaymentApiResult handleAuthResponse(
@@ -90,7 +89,7 @@ public class PaymentService {
         }
 
         FdsRequestContext fdsContext = paymentCommandService.completeAuthAndRequestFds(
-                context.transactionId(), response.externalId(), response.authorizedAt()
+                context.transactionId(), response.externalId(), response.authenticatedAt()
         );
         return runFdsCheck(idempotentKey, fdsContext);
     }

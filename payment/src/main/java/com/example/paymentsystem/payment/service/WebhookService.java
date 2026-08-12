@@ -23,7 +23,7 @@ public class WebhookService {
     private static final String PAYMENT_STATUS_CHANGED = "PAYMENT_STATUS_CHANGED";
     private static final String STAGE_AUTH = "AUTH";
     private static final String STAGE_FDS = "FDS";
-    private static final String STAGE_CAPTURE = "CAPTURE";
+    private static final String STAGE_APPROVE = "CAPTURE";
     private static final String WEBHOOK_READY_FOR_CONFIRM = "ready";
     private static final String WEBHOOK_DONE = "done";
     private static final String WEBHOOK_FAILED = "failed";
@@ -53,8 +53,8 @@ public class WebhookService {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public void saveCaptureFailed(PaymentIntent paymentIntent) {
-        save(paymentIntent, WEBHOOK_FAILED, STAGE_CAPTURE);
+    public void saveApproveFailed(PaymentIntent paymentIntent) {
+        save(paymentIntent, WEBHOOK_FAILED, STAGE_APPROVE);
     }
 
 

@@ -2,7 +2,7 @@ package com.example.paymentsystem.payment.service;
 
 import com.example.paymentsystem.payment.client.card.AuthInquiryResponse;
 import com.example.paymentsystem.payment.client.card.CardClient;
-import com.example.paymentsystem.payment.client.card.CaptureInquiryResponse;
+import com.example.paymentsystem.payment.client.card.ApproveInquiryResponse;
 import com.example.paymentsystem.payment.client.fds.FdsClient;
 import com.example.paymentsystem.payment.client.fds.FdsInquiryResponse;
 import com.example.paymentsystem.payment.component.RecoveryCounter;
@@ -75,15 +75,15 @@ public class InquiryService {
         );
     }
 
-    public void inquiryCapture(PaymentTransaction transaction) {
-        recoveryCounter.incrementInquiryTotal("capture");
+    public void inquiryApprove(PaymentTransaction transaction) {
+        recoveryCounter.incrementInquiryTotal("approve");
         CardCompany company = transaction.getPaymentIntent().getCardCompany();
         String cardRequestRef = transaction.getCardRequestRef();
         externalCallExecutor.executeVoid(
-                () -> cardClient.inquiryCapture(company, cardRequestRef),
-                response -> handleCaptureInquiry(transaction, response),
+                () -> cardClient.inquiryApprove(company, cardRequestRef),
+                response -> handleApproveInquiry(transaction, response),
                 () -> {},
-                () -> paymentCommandService.failCaptureAndComplete(
+                () -> paymentCommandService.failApproveAndComplete(
                         transaction.getId(), null, confirmKey(transaction))
         );
     }
@@ -97,7 +97,7 @@ public class InquiryService {
             case "success" -> paymentCommandService.completeAuth(
                     transaction.getId(),
                     response.externalId(),
-                    response.authorizedAt()
+                    response.authenticatedAt()
             );
             case "failed" -> paymentCommandService.failAuthAndComplete(
                     transaction.getId(), response.externalId(), idempotentKey);
@@ -121,15 +121,15 @@ public class InquiryService {
         }
     }
 
-    private void handleCaptureInquiry(PaymentTransaction transaction, CaptureInquiryResponse response) {
-        recoveryCounter.incrementInquiryResult("capture", response.status());
+    private void handleApproveInquiry(PaymentTransaction transaction, ApproveInquiryResponse response) {
+        recoveryCounter.incrementInquiryResult("approve", response.status());
         String idempotentKey = confirmKey(transaction);
         switch (response.status()) {
-            case "success" -> paymentCommandService.completeCaptureAndComplete(
+            case "success" -> paymentCommandService.completeApproveAndComplete(
                     transaction.getId(), response.externalId(), idempotentKey, LedgerSourceType.PAYMENT_TRANSACTION);
-            case "failed" -> paymentCommandService.failCaptureAndComplete(
+            case "failed" -> paymentCommandService.failApproveAndComplete(
                     transaction.getId(), response.externalId(), idempotentKey);
-            case "not_found" -> paymentCommandService.failCaptureAndComplete(
+            case "not_found" -> paymentCommandService.failApproveAndComplete(
                     transaction.getId(), null, idempotentKey);
             case "in_progress" -> {}
         }

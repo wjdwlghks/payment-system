@@ -43,8 +43,10 @@ public class ReconciliationValidationService {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final String GLOBAL = "GLOBAL";
+    // Stage 2 한시: 아직 매입이 없어 승인(APPROVE)을 대상으로 삼는다.
+    // Stage 3에서 매입(CAPTURE)이 생기면 그쪽으로 옮긴다.
     private static final List<TransactionType> RECON_TYPES =
-            List.of(TransactionType.CAPTURE);
+            List.of(TransactionType.APPROVE);
     private static final List<TransactionStatus> RECON_STATUSES =
             List.of(TransactionStatus.SUCCEEDED, TransactionStatus.FAIL);
     private static final List<TransactionStatus> UNKNOWN_STATUS =

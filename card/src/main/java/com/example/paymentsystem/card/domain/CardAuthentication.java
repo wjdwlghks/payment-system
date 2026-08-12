@@ -15,12 +15,12 @@ import java.time.Instant;
 import lombok.*;
 
 @Entity
-@Table(name = "card_authorization")
+@Table(name = "card_authentication")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Builder
 @AllArgsConstructor(access = AccessLevel.PROTECTED)
-public class CardAuthorization {
+public class CardAuthentication {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -32,10 +32,11 @@ public class CardAuthorization {
     @Column(name = "card_request_ref", nullable = false, length = 100, unique = true)
     private String cardRequestRef;
 
-    @Column(name = "capture_id", length = 100, unique = true)
-    private String captureId;
+    @Column(name = "approval_id", length = 100, unique = true)
+    private String approvalId;
 
-    @Column(nullable = false)
+    // 금액은 인증이 아니라 승인의 속성이다 — 승인 시점에 채워진다.
+    @Column
     private Long amount;
 
     @Enumerated(EnumType.STRING)
@@ -43,17 +44,17 @@ public class CardAuthorization {
     private CardAuthStatus authStatus;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "capture_status", nullable = false, length = 30)
-    private CardCaptureStatus captureStatus;
+    @Column(name = "approval_status", nullable = false, length = 30)
+    private CardApprovalStatus approvalStatus;
 
-    @Column(name = "authorized_at", nullable = false)
-    private Instant authorizedAt;
+    @Column(name = "authenticated_at", nullable = false)
+    private Instant authenticatedAt;
 
-    @Column(name = "capture_card_request_ref", length = 100, unique = true)
-    private String captureCardRequestRef;
+    @Column(name = "approval_card_request_ref", length = 100, unique = true)
+    private String approvalCardRequestRef;
 
-    @Column(name = "captured_at")
-    private Instant capturedAt;
+    @Column(name = "approved_at")
+    private Instant approvedAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -73,10 +74,11 @@ public class CardAuthorization {
         this.updatedAt = Instant.now();
     }
 
-    public void capture(String captureId, String captureCardRequestRef, Instant capturedAt) {
-        this.captureId = captureId;
-        this.captureCardRequestRef = captureCardRequestRef;
-        this.captureStatus = CardCaptureStatus.SUCCESS;
-        this.capturedAt = capturedAt;
+    public void approve(String approvalId, String approvalCardRequestRef, Long amount, Instant approvedAt) {
+        this.approvalId = approvalId;
+        this.amount = amount;
+        this.approvalCardRequestRef = approvalCardRequestRef;
+        this.approvalStatus = CardApprovalStatus.SUCCESS;
+        this.approvedAt = approvedAt;
     }
 }

@@ -2,10 +2,10 @@ package com.example.paymentsystem.payment.dto;
 
 import com.example.paymentsystem.payment.domain.CardCompany;
 
-public record CaptureRequestContext(
+public record ApproveRequestContext(
         Long paymentIntentId,
         Long transactionId,
-        String authorizationId,
+        String authenticationId,
         String paymentKey,
         String orderId,
         String merchantId,

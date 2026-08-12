@@ -1,6 +1,6 @@
 package com.example.paymentsystem.payment.client.card;
 
-public record CardCaptureResponse(
+public record CardApproveResponse(
         boolean success,
         String externalId
 ) {

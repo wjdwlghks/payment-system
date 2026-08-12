@@ -114,15 +114,17 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     AND NOT EXISTS (
         SELECT pt FROM PaymentTransaction pt
         WHERE pt.paymentIntent = pi
-          AND pt.type = com.example.paymentsystem.payment.domain.TransactionType.CAPTURE
+          AND pt.type = com.example.paymentsystem.payment.domain.TransactionType.APPROVE
           AND pt.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
     )
     """)
+    // Stage 2 한시: DONE ⟺ 승인성공 등가를 검증한다.
+    // Stage 3에서 DONE(승인) 이후 매입이 분리되면 불변식 자체를 교체한다.
     long countDoneWithoutCaptureSucceeded();
 
     @Query("""
     SELECT COUNT(pt) FROM PaymentTransaction pt
-    WHERE pt.type = com.example.paymentsystem.payment.domain.TransactionType.CAPTURE
+    WHERE pt.type = com.example.paymentsystem.payment.domain.TransactionType.APPROVE
       AND pt.status = com.example.paymentsystem.payment.domain.TransactionStatus.SUCCEEDED
       AND pt.paymentIntent.status <> com.example.paymentsystem.payment.domain.PaymentIntentStatus.DONE
     """)

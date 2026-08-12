@@ -26,8 +26,8 @@ public class LedgerService {
     private final AccountRepository accountRepository;
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public void postCapture(Long captureTransactionId, LedgerSourceType sourceType) {
-        PaymentTransaction transaction = paymentTransactionRepository.findById(captureTransactionId)
+    public void postCapture(Long approveTransactionId, LedgerSourceType sourceType) {
+        PaymentTransaction transaction = paymentTransactionRepository.findById(approveTransactionId)
                 .orElseThrow();
         String merchantId = transaction.getPaymentIntent().getMerchantId();
 
@@ -45,7 +45,7 @@ public class LedgerService {
             entries.add(new LedgerEntry(feeRevenue, LedgerDirection.CREDIT, fee, LedgerEntryType.CAPTURE));
         }
 
-        post(LedgerPostingType.CAPTURE, sourceType, captureTransactionId.toString(), entries);
+        post(LedgerPostingType.CAPTURE, sourceType, approveTransactionId.toString(), entries);
     }
 
     // CLEARING: 카드사와 대사(reconciliation)가 끝난 net 금액에서 카드사 매입 수수료만 확정 반영.

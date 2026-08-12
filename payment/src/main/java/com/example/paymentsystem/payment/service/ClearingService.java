@@ -45,9 +45,11 @@ public class ClearingService {
 
         Instant windowStart = optionalWindowStart.get();
 
+        // Stage 2 한시: 아직 매입이 없어 승인(APPROVE)을 청산 대상으로 삼는다.
+        // Stage 3에서 매입(CAPTURE)이 생기면 그쪽으로 옮긴다.
         List<PaymentTransaction> transactions = paymentTransactionRepository.findUnclearedCaptureTransactions(
                 TransactionStatus.SUCCEEDED,
-                TransactionType.CAPTURE,
+                TransactionType.APPROVE,
                 windowStart,
                 windowEnd
         );
@@ -100,7 +102,7 @@ public class ClearingService {
     private Optional<Instant> oldestUnclearedCaptureUpdatedAt() {
         return paymentTransactionRepository.findOldestUnclearedTransactions(
                         TransactionStatus.SUCCEEDED,
-                        TransactionType.CAPTURE,
+                        TransactionType.APPROVE,
                         PageRequest.of(0, 1)
                 )
                 .stream()

@@ -80,14 +80,14 @@ public class PaymentCommandService {
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentResponse completeAuth(Long transactionId, String externalId, Instant authorizedAt) {
+    public PaymentResponse completeAuth(Long transactionId, String externalId, Instant authenticatedAt) {
         PaymentTransaction transaction = getTransaction(transactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() != TransactionStatus.REQUESTED
                 && transaction.getStatus() != TransactionStatus.UNKNOWN) {
             return toResponse(paymentIntent);
         }
-        paymentIntent.markAuthReady(authorizedAt);
+        paymentIntent.markAuthReady(authenticatedAt);
         transaction.markSucceeded(externalId);
         return toResponse(paymentIntent);
     }
@@ -96,7 +96,7 @@ public class PaymentCommandService {
     // inquiry로 뒤늦게 AUTH가 확정되는 경로는 여전히 completeAuth 단독을 쓰고 FdsScheduler가 뒤이어 FDS를 재개한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public FdsRequestContext completeAuthAndRequestFds(Long transactionId, String externalId, Instant authorizedAt) {
+    public FdsRequestContext completeAuthAndRequestFds(Long transactionId, String externalId, Instant authenticatedAt) {
         PaymentTransaction transaction = getTransaction(transactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() != TransactionStatus.REQUESTED
@@ -104,7 +104,7 @@ public class PaymentCommandService {
             throw new IllegalStateException(
                     "completeAuthAndRequestFds called on already-terminal transaction: " + transaction.getStatus());
         }
-        paymentIntent.markAuthReady(authorizedAt);
+        paymentIntent.markAuthReady(authenticatedAt);
         transaction.markSucceeded(externalId);
 
         paymentIntent.markFdsRequested();
@@ -270,38 +270,38 @@ public class PaymentCommandService {
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentResponse failCapture(Long transactionId, String externalId) {
+    public PaymentResponse failApprove(Long transactionId, String externalId) {
         PaymentTransaction transaction = getTransaction(transactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() != TransactionStatus.REQUESTED
                 && transaction.getStatus() != TransactionStatus.UNKNOWN) {
             return toResponse(paymentIntent);
         }
-        paymentIntent.markCaptureFailed();
+        paymentIntent.markApproveFailed();
         markFail(transaction, externalId);
-        webhookService.saveCaptureFailed(paymentIntent);
+        webhookService.saveApproveFailed(paymentIntent);
         return toResponse(paymentIntent);
     }
 
-    // 병합 트랜잭션: failCapture + idempotent complete.
+    // 병합 트랜잭션: failApprove + idempotent complete.
     // confirm phase가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentApiResult failCaptureAndComplete(Long transactionId, String externalId, String idempotentKey) {
+    public PaymentApiResult failApproveAndComplete(Long transactionId, String externalId, String idempotentKey) {
         PaymentTransaction transaction = getTransaction(transactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() == TransactionStatus.REQUESTED || transaction.getStatus() == TransactionStatus.UNKNOWN) {
-            paymentIntent.markCaptureFailed();
+            paymentIntent.markApproveFailed();
             markFail(transaction, externalId);
-            webhookService.saveCaptureFailed(paymentIntent);
+            webhookService.saveApproveFailed(paymentIntent);
         }
         return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, toResponse(paymentIntent));
     }
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentResponse completeCapture(Long captureTransactionId, String externalId, LedgerSourceType sourceType) {
-        PaymentTransaction transaction = getTransaction(captureTransactionId);
+    public PaymentResponse completeApprove(Long approveTransactionId, String externalId, LedgerSourceType sourceType) {
+        PaymentTransaction transaction = getTransaction(approveTransactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() != TransactionStatus.REQUESTED
                 && transaction.getStatus() != TransactionStatus.UNKNOWN) {
@@ -310,35 +310,35 @@ public class PaymentCommandService {
         paymentIntent.markDone(externalId);
         transaction.markSucceeded(externalId);
         webhookService.savePaymentComplete(paymentIntent);
-        ledgerService.postCapture(captureTransactionId, sourceType);
+        ledgerService.postCapture(approveTransactionId, sourceType);
         return toResponse(paymentIntent);
     }
 
-    // 병합 트랜잭션: completeCapture + idempotent complete.
+    // 병합 트랜잭션: completeApprove + idempotent complete.
     // confirm phase가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentApiResult completeCaptureAndComplete(Long captureTransactionId, String externalId, String idempotentKey, LedgerSourceType sourceType) {
-        PaymentTransaction transaction = getTransaction(captureTransactionId);
+    public PaymentApiResult completeApproveAndComplete(Long approveTransactionId, String externalId, String idempotentKey, LedgerSourceType sourceType) {
+        PaymentTransaction transaction = getTransaction(approveTransactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() == TransactionStatus.REQUESTED || transaction.getStatus() == TransactionStatus.UNKNOWN) {
             paymentIntent.markDone(externalId);
             transaction.markSucceeded(externalId);
             webhookService.savePaymentComplete(paymentIntent);
-            ledgerService.postCapture(captureTransactionId, sourceType);
+            ledgerService.postCapture(approveTransactionId, sourceType);
         }
         return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_CONFIRM, toResponse(paymentIntent));
     }
 
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentResponse unknownCapture(Long transactionId) {
+    public PaymentResponse unknownApprove(Long transactionId) {
         PaymentTransaction transaction = getTransaction(transactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() != TransactionStatus.REQUESTED) {
             return toResponse(paymentIntent);
         }
-        paymentIntent.markCaptureUnknown();
+        paymentIntent.markApproveUnknown();
         transaction.markUnknown();
         return toResponse(paymentIntent);
     }
@@ -348,7 +348,7 @@ public class PaymentCommandService {
     // 유니크 제약 위반 시 DataIntegrityViolationException이 전파되며 전체 롤백 — 호출부에서 기존 키를 재조회한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public CaptureRequestContext createCaptureRequestWithIdempotency(String paymentKey) {
+    public ApproveRequestContext createApproveRequestWithIdempotency(String paymentKey) {
         PaymentIntent paymentIntent = paymentIntentRepository.findByPaymentKey(paymentKey)
                 .orElseThrow(() -> new IllegalArgumentException("Payment intent not found: " + paymentKey));
 
@@ -367,7 +367,7 @@ public class PaymentCommandService {
                 .build();
         idempotencyKeyRepository.saveAndFlush(key);
 
-        paymentIntent.markCaptureRequested();
+        paymentIntent.markApproveRequested();
 
         PaymentTransaction authTransaction = paymentTransactionRepository
                 .findByPaymentIntentAndTypeAndStatus(
@@ -377,23 +377,23 @@ public class PaymentCommandService {
                 )
                 .orElseThrow(() -> new IllegalStateException("Succeeded auth transaction not found"));
 
-        PaymentTransaction captureTransaction = new PaymentTransaction(
+        PaymentTransaction approveTransaction = new PaymentTransaction(
                 paymentIntent,
-                TransactionType.CAPTURE,
+                TransactionType.APPROVE,
                 paymentIntent.getAmount()
         );
 
-        paymentTransactionRepository.save(captureTransaction);
+        paymentTransactionRepository.save(approveTransaction);
 
-        return new CaptureRequestContext(
+        return new ApproveRequestContext(
                 paymentIntent.getId(),
-                captureTransaction.getId(),
+                approveTransaction.getId(),
                 authTransaction.getExternalId(),
                 paymentIntent.getPaymentKey(),
                 paymentIntent.getOrderId(),
                 paymentIntent.getMerchantId(),
                 paymentIntent.getAmount(),
-                captureTransaction.getCardRequestRef(),
+                approveTransaction.getCardRequestRef(),
                 paymentIntent.getCardCompany()
         );
     }
@@ -421,7 +421,7 @@ public class PaymentCommandService {
                 paymentIntent.getOrderId(),
                 paymentIntent.getStatus(),
                 paymentIntent.getAmount(),
-                paymentIntent.getAuthorizedAt()
+                paymentIntent.getAuthenticatedAt()
         );
     }
 

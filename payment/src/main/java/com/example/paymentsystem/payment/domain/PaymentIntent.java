@@ -42,11 +42,11 @@ public class PaymentIntent {
     @Column(nullable = false, length = 30)
     private PaymentIntentStatus status;
 
-    @Column(name = "authorized_at")
-    private Instant authorizedAt;
+    @Column(name = "authenticated_at")
+    private Instant authenticatedAt;
 
-    @Column(name = "capture_id", length = 100)
-    private String captureId;
+    @Column(name = "approval_id", length = 100)
+    private String approvalId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "card_company", nullable = false, length = 30)
@@ -83,9 +83,9 @@ public class PaymentIntent {
         this.updatedAt = Instant.now();
     }
 
-    public void markAuthReady(Instant authorizedAt) {
+    public void markAuthReady(Instant authenticatedAt) {
         this.status = PaymentIntentStatus.AUTH_READY;
-        this.authorizedAt = authorizedAt;
+        this.authenticatedAt = authenticatedAt;
     }
 
     public void markAuthFailed() {
@@ -107,20 +107,20 @@ public class PaymentIntent {
         this.status = PaymentIntentStatus.FDS_READY;
     }
 
-    public void markCaptureRequested() {
+    public void markApproveRequested() {
         if (this.status != PaymentIntentStatus.FDS_READY) {
             throw new IllegalStateException("Cannot start capture: intent status is " + this.status);
         }
-        this.status = PaymentIntentStatus.CAPTURE_REQUESTED;
+        this.status = PaymentIntentStatus.APPROVE_REQUESTED;
     }
 
-    public void markCaptureFailed() {
-        this.status = PaymentIntentStatus.CAPTURE_FAILED;
+    public void markApproveFailed() {
+        this.status = PaymentIntentStatus.APPROVE_FAILED;
     }
 
-    public void markDone(String captureId) {
+    public void markDone(String approvalId) {
         this.status = PaymentIntentStatus.DONE;
-        this.captureId = captureId;
+        this.approvalId = approvalId;
     }
 
     public void markAuthUnknown() {
@@ -131,8 +131,8 @@ public class PaymentIntent {
         this.status = PaymentIntentStatus.UNKNOWN_FDS;
     }
 
-    public void markCaptureUnknown() {
-        this.status = PaymentIntentStatus.UNKNOWN_CAPTURE;
+    public void markApproveUnknown() {
+        this.status = PaymentIntentStatus.UNKNOWN_APPROVE;
     }
 
 

@@ -14,8 +14,8 @@ public class CardFailureConfig {
     @Bean
     public FailureAliasPatterns failureAliasPatterns() {
         return new FailureAliasPatterns(Map.of(
-                "auth", Pattern.compile("^POST /v1/authorizations$"),
-                "capture", Pattern.compile("^POST /v1/authorizations/[^/]+/capture$")
+                "auth", Pattern.compile("^POST /v1/authentications$"),
+                "approve", Pattern.compile("^POST /v1/authentications/[^/]+/approve$")
         ));
     }
 }

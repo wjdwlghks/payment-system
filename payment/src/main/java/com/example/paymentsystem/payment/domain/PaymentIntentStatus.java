@@ -9,8 +9,8 @@ public enum PaymentIntentStatus {
     UNKNOWN_FDS,
     FDS_READY,
     FDS_FAILED,
-    CAPTURE_REQUESTED,
-    UNKNOWN_CAPTURE,
-    CAPTURE_FAILED,
+    APPROVE_REQUESTED,
+    UNKNOWN_APPROVE,
+    APPROVE_FAILED,
     DONE
 }

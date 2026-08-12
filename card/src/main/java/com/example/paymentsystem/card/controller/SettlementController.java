@@ -1,8 +1,8 @@
 package com.example.paymentsystem.card.controller;
 
-import com.example.paymentsystem.card.domain.CardAuthorization;
-import com.example.paymentsystem.card.domain.CardCaptureStatus;
-import com.example.paymentsystem.card.repository.CardAuthorizationRepository;
+import com.example.paymentsystem.card.domain.CardAuthentication;
+import com.example.paymentsystem.card.domain.CardApprovalStatus;
+import com.example.paymentsystem.card.repository.CardAuthenticationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -30,7 +30,7 @@ public class SettlementController {
     private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").withZone(ZoneOffset.UTC);
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_INSTANT;
 
-    private final CardAuthorizationRepository authorizationRepository;
+    private final CardAuthenticationRepository authenticationRepository;
 
     @Value("${settlement.output-dir:/recon-files}")
     private String outputDir;
@@ -46,7 +46,7 @@ public class SettlementController {
                 writer.write(HEADER);
                 writer.newLine();
 
-                writeCaptures(writer);
+                writeApprovals(writer);
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -55,18 +55,20 @@ public class SettlementController {
         return ResponseEntity.ok(filename);
     }
 
-    private void writeCaptures(BufferedWriter writer) throws IOException {
-        List<CardAuthorization> captures = authorizationRepository.findByCaptureStatusIn(
-                List.of(CardCaptureStatus.SUCCESS, CardCaptureStatus.FAILED)
+    // Stage 2 한시: 아직 매입이 없어 승인 데이터로 정산 파일을 만든다.
+    // tx_type 리터럴 "CAPTURE"는 파일 포맷 계약이라 유지한다 (Stage 3에서 CardCapture 기반으로 교체).
+    private void writeApprovals(BufferedWriter writer) throws IOException {
+        List<CardAuthentication> captures = authenticationRepository.findByApprovalStatusIn(
+                List.of(CardApprovalStatus.SUCCESS, CardApprovalStatus.FAILED)
         );
 
-        for (CardAuthorization auth : captures) {
-            String txStatus = auth.getCaptureStatus() == CardCaptureStatus.SUCCESS ? "APPROVED" : "DECLINED";
+        for (CardAuthentication auth : captures) {
+            String txStatus = auth.getApprovalStatus() == CardApprovalStatus.SUCCESS ? "APPROVED" : "DECLINED";
             writeLine(writer,
-                    auth.getCaptureCardRequestRef(),
-                    auth.getCaptureId(),
+                    auth.getApprovalCardRequestRef(),
+                    auth.getApprovalId(),
                     auth.getAmount(),
-                    auth.getCapturedAt(),
+                    auth.getApprovedAt(),
                     "CAPTURE",
                     txStatus,
                     ""

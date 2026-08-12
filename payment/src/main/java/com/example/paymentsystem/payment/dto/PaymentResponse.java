@@ -8,6 +8,6 @@ public record PaymentResponse(
         String orderId,
         PaymentIntentStatus status,
         Long amount,
-        Instant authorizedAt
+        Instant authenticatedAt
 ) {
 }

@@ -83,12 +83,12 @@ public class IdempotentRecoveryService {
         }
         PaymentIntent pi = intent.get();
         PaymentIntentStatus status = pi.getStatus();
-        // confirm phase now performs CAPTURE only; FDS_READY means capture not yet started
+        // confirm phase now performs APPROVE only; FDS_READY means approval not yet started
         return switch (status) {
             case AUTH_REQUESTED, UNKNOWN_AUTH, AUTH_READY,
                  FDS_REQUESTED, UNKNOWN_FDS, FDS_READY,
-                 CAPTURE_REQUESTED, UNKNOWN_CAPTURE -> Optional.empty();
-            case AUTH_FAILED, FDS_FAILED, CAPTURE_FAILED -> Optional.of(intentOutcome(pi, 422));
+                 APPROVE_REQUESTED, UNKNOWN_APPROVE -> Optional.empty();
+            case AUTH_FAILED, FDS_FAILED, APPROVE_FAILED -> Optional.of(intentOutcome(pi, 422));
             default -> Optional.of(intentOutcome(pi, 200));
         };
     }

@@ -5,6 +5,6 @@ import java.time.Instant;
 public record AuthInquiryResponse(
         String status,
         String externalId,
-        Instant authorizedAt
+        Instant authenticatedAt
 ) {
 }

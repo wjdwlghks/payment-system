@@ -22,9 +22,11 @@ public class PgAuditController {
                 TransactionType.AUTH, TransactionStatus.SUCCEEDED);
     }
 
+    // Stage 2 한시: 아직 매입이 없어 승인(APPROVE)을 대상으로 삼는다.
+    // Stage 3에서 매입(CAPTURE)이 생기면 그쪽으로 옮긴다.
     @GetMapping("/capture-keys")
     public List<String> captureKeys() {
         return txRepository.findCardRequestRefsByTypeAndStatus(
-                TransactionType.CAPTURE, TransactionStatus.SUCCEEDED);
+                TransactionType.APPROVE, TransactionStatus.SUCCEEDED);
     }
 }

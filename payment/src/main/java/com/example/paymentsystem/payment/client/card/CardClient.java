@@ -16,11 +16,11 @@ public class CardClient {
     private final Map<CardCompany, RestClient> cardRestClients;
     private final CardConcurrencyLimiterRegistry limiterRegistry;
 
-    public CardAuthResponse authorize(CardCompany company, CardAuthRequest request) {
+    public CardAuthResponse authenticate(CardCompany company, CardAuthRequest request) {
         Limiter.Listener token = acquireOrThrow(company);
         try {
             CardAuthResponse response = restClient(company).post()
-                    .uri("/v1/authorizations")
+                    .uri("/v1/authentications")
                     .body(request)
                     .retrieve()
                     .body(CardAuthResponse.class);
@@ -32,14 +32,14 @@ public class CardClient {
         }
     }
 
-    public CardCaptureResponse capture(CardCompany company, String authorizationId, CardCaptureRequest request) {
+    public CardApproveResponse approve(CardCompany company, String authenticationId, CardApproveRequest request) {
         Limiter.Listener token = acquireOrThrow(company);
         try {
-            CardCaptureResponse response = restClient(company).post()
-                    .uri("/v1/authorizations/{authorizationId}/capture", authorizationId)
+            CardApproveResponse response = restClient(company).post()
+                    .uri("/v1/authentications/{authenticationId}/approve", authenticationId)
                     .body(request)
                     .retrieve()
-                    .body(CardCaptureResponse.class);
+                    .body(CardApproveResponse.class);
             token.onSuccess();
             return response;
         } catch (Exception e) {
@@ -50,16 +50,16 @@ public class CardClient {
 
     public AuthInquiryResponse inquiryAuth(CardCompany company, String cardRequestRef) {
         return restClient(company).get()
-                .uri("/v1/authorizations/inquiries/{cardRequestRef}", cardRequestRef)
+                .uri("/v1/authentications/inquiries/{cardRequestRef}", cardRequestRef)
                 .retrieve()
                 .body(AuthInquiryResponse.class);
     }
 
-    public CaptureInquiryResponse inquiryCapture(CardCompany company, String cardRequestRef) {
+    public ApproveInquiryResponse inquiryApprove(CardCompany company, String cardRequestRef) {
         return restClient(company).get()
-                .uri("/v1/authorizations/captures/inquiries/{cardRequestRef}", cardRequestRef)
+                .uri("/v1/authentications/approvals/inquiries/{cardRequestRef}", cardRequestRef)
                 .retrieve()
-                .body(CaptureInquiryResponse.class);
+                .body(ApproveInquiryResponse.class);
     }
 
     private Limiter.Listener acquireOrThrow(CardCompany company) {
