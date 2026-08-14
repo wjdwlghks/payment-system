@@ -27,13 +27,13 @@ public class ApproveExecutionService {
         return externalCallExecutor.execute(
                 () -> cardClient.approve(approveContext.cardCompany(), approveContext.authenticationId(), approveRequest),
                 response -> response.success()
-                        ? paymentCommandService.completeApproveAndComplete(approveContext.transactionId(), response.externalId(), idempotentKey)
-                        : paymentCommandService.failApproveAndComplete(approveContext.transactionId(), response.externalId(), idempotentKey),
+                        ? paymentCommandService.completeApprove(approveContext.transactionId(), response.externalId(), idempotentKey)
+                        : paymentCommandService.failApprove(approveContext.transactionId(), response.externalId(), idempotentKey),
                 // UNKNOWN은 확정된 결과가 아니므로 멱등키를 완결하지 않는다 — PROCESSING을 유지한 채
                 // InquiryScheduler가 실제 상태를 확정하는 시점에 그 트랜잭션에서 완결된다.
                 () -> new PaymentApiResult(200, objectMapper.writeValueAsString(
                         paymentCommandService.unknownApprove(approveContext.transactionId()))),
-                () -> paymentCommandService.failApproveAndComplete(approveContext.transactionId(), null, idempotentKey)
+                () -> paymentCommandService.failApprove(approveContext.transactionId(), null, idempotentKey)
         );
     }
 }

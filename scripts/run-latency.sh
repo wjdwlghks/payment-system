@@ -46,12 +46,26 @@ until curl -sf "$MERCHANT_URL/admin/latency" >/dev/null 2>&1; do sleep 3; done
 log "Services ready."
 
 # ── 2. 부하 ────────────────────────────────────────────────────────────────
+# 카드사 적응형 한도를 부하 중에 표본화한다. 실패율이 높을 때 그게 카드사 장애 때문인지
+# 리미터 사전거절 때문인지는 사후에 구분할 수 없어서, 도는 동안 찍어둬야 한다.
+K6_SUMMARY=$(mktemp)
+LIMIT_SAMPLES=$(mktemp)
+( while true; do
+    curl -sf "$PAYMENT_URL/admin/concurrency-limits" >> "$LIMIT_SAMPLES" 2>/dev/null && echo >> "$LIMIT_SAMPLES"
+    sleep 5
+  done ) &
+SAMPLER_PID=$!
+trap 'kill $SAMPLER_PID 2>/dev/null || true' EXIT
+
 log "=== 2. Run k6 latency load (tps=$TPS duration=$DURATION prob=$PROB) ==="
 k6 run \
   -e MERCHANT="$MERCHANT_URL" -e PAYMENT="$PAYMENT_URL" \
   -e CARD_A="$CARD_A_URL" -e CARD_B="$CARD_B_URL" -e FDS="$FDS_URL" \
   -e TPS="$TPS" -e DURATION="$DURATION" -e PROB="$PROB" \
+  -e SUMMARY_OUT="$K6_SUMMARY" \
   "$K6_SCRIPT"
+
+kill $SAMPLER_PID 2>/dev/null || true
 
 log "=== 3. Ensure failure rules cleared ==="
 for url in "$PAYMENT_URL" "$CARD_A_URL" "$CARD_B_URL" "$FDS_URL"; do
@@ -59,7 +73,7 @@ for url in "$PAYMENT_URL" "$CARD_A_URL" "$CARD_B_URL" "$FDS_URL"; do
 done
 
 # ── 4. 자연 수렴 대기 (run-now 없음) ───────────────────────────────────────
-# 남은 UNKNOWN은 InquiryScheduler(10s)가 자기 주기로 해소한다. 그 시간이 곧 측정 대상이므로
+# 남은 UNKNOWN은 InquiryScheduler가 자기 주기(payment.inquiry.interval-ms)로 해소한다. 그 시간이 곧 측정 대상이므로
 # 절대 앞당기지 않는다. inFlight가 0이 되어야 분포에 가장 느린 건들이 들어온다.
 log "=== 4. Wait for natural convergence (NO run-now) ==="
 WAIT_MAX=${WAIT_MAX:-180}
@@ -92,9 +106,34 @@ RECOVERY=$(curl -sf "$PAYMENT_URL/admin/metrics/recovery")
 
 python3 - <<EOF > "$RESULT_FILE"
 import json
+
+latency = json.loads('''$LATENCY''')
+
+with open("$K6_SUMMARY") as f:
+    throughput = json.load(f)
+
+# 완료 처리량은 k6가 모른다 — 가맹점이 승인까지 확인한 건수를 부하 시간으로 나눈다.
+duration = throughput.get("durationSec") or 1
+throughput["completedRps"] = round(latency["completed"] / duration, 1)
+throughput["failedRps"] = round(latency["failed"] / duration, 1)
+
+limits = []
+with open("$LIMIT_SAMPLES") as f:
+    for line in f:
+        line = line.strip()
+        if line.startswith("{"):
+            limits.append(json.loads(line))
+limit_summary = {}
+for company in ("CARD_CORP_A", "CARD_CORP_B"):
+    vals = [s[company] for s in limits if company in s]
+    if vals:
+        limit_summary[company] = {"min": min(vals), "max": max(vals), "last": vals[-1]}
+
 print(json.dumps({
     "params":      {"prob": "$PROB", "tps": "$TPS", "duration": "$DURATION"},
-    "latency":     json.loads('''$LATENCY'''),
+    "throughput":  throughput,
+    "latency":     latency,
+    "concurrencyLimits": limit_summary,
     "convergence": json.loads('''$CONVERGENCE'''),
     "pgInternal":  json.loads('''$PG_INTERNAL'''),
     "recovery":    json.loads('''$RECOVERY'''),

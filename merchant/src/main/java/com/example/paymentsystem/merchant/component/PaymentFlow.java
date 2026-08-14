@@ -35,6 +35,9 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p>정상 건은 동기 응답만으로 끝나고 UNKNOWN 건만 웹훅 콜백을 탄다. 그래서 정상 건의 지연이
  * 그대로 대조군이 된다.
+ *
+ * <p><b>모든 상태는 orderId로 키잉한다.</b> payment가 커밋 직후 즉시 웹훅을 배달하게 되면서
+ * 웹훅이 HTTP 응답을 추월할 수 있게 됐고, paymentKey는 그 응답에서만 알 수 있기 때문이다.
  */
 @Slf4j
 @Component
@@ -87,27 +90,59 @@ public class PaymentFlow {
 
     // ── 동기 경로 ────────────────────────────────────────────────────────────
 
-    /** @param startNanos 요청을 <b>보내기 직전</b>에 찍은 시각. */
-    public void onPaymentResponse(long startNanos, ResponseEntity<String> response) {
+    /**
+     * 요청을 <b>보내기 전에</b> 시계를 켠다. 반환된 orderId를 응답 처리에 그대로 넘긴다.
+     *
+     * <p>등록이 발신보다 먼저여야 하는 이유는 두 가지다. 하나는 t0에 인증+FDS 왕복이 포함돼야
+     * 하기 때문이고, 다른 하나는 payment가 커밋 즉시 웹훅을 쏘기 때문에 <b>응답보다 웹훅이
+     * 먼저 도착할 수 있기</b> 때문이다. 응답을 받고 등록하면 그 웹훅이 갈 곳을 잃는다.
+     */
+    public String begin(String body) {
+        JsonNode request = parse(body);
+        String key = flowKey(text(request, "merchantId"), text(request, "orderId"));
+        if (key == null) {
+            log.warn("payment request without merchantId/orderId; latency will not be tracked");
+            return null;
+        }
+        recorder.start(key, System.nanoTime(), false);
+        return key;
+    }
+
+    /**
+     * 흐름 식별자. payment의 {@code PAYMENT_REQUEST} 멱등키와 같은 조합을 쓴다 —
+     * orderId는 <b>가맹점 단위로만</b> 유일하므로 그것만으로 키잉하면 서로 다른 가맹점이
+     * 같은 주문번호를 쓸 때 두 결제가 한 칸을 공유해 한쪽이 통째로 누락된다.
+     */
+    private String flowKey(String merchantId, String orderId) {
+        if (merchantId == null || orderId == null) {
+            return null;
+        }
+        return merchantId + ":" + orderId;
+    }
+
+    public void onPaymentResponse(String orderId, ResponseEntity<String> response) {
+        if (orderId == null) {
+            return;
+        }
         if (response.getStatusCode().value() != 200) {
+            recorder.fail(orderId);
             return;
         }
         JsonNode body = parse(response.getBody());
-        if (body == null) {
-            return;
-        }
         String paymentKey = text(body, "paymentKey");
         String status = text(body, "status");
-        if (paymentKey == null || status == null) {
+        if (status == null) {
             return;
         }
 
-        recorder.start(paymentKey, startNanos, status.startsWith("UNKNOWN"));
-
+        if (status.startsWith("UNKNOWN")) {
+            recorder.markUnknown(orderId);
+            return;                                  // ready 웹훅이 이어받는다
+        }
         switch (status) {
-            case "FDS_PASSED" -> approve(paymentKey);
-            case "AUTH_FAILED", "FDS_FAILED" -> recorder.fail(paymentKey);
-            default -> { /* UNKNOWN_AUTH / UNKNOWN_FDS → ready 웹훅 대기 */ }
+            case "FDS_PASSED" -> approve(orderId, paymentKey);
+            case "AUTH_FAILED", "FDS_FAILED" -> recorder.fail(orderId);
+            default -> { }
         }
     }
 
@@ -116,16 +151,15 @@ public class PaymentFlow {
     /**
      * 웹훅 접수. <b>여기서 실제 작업을 하면 안 된다.</b>
      *
-     * <p>payment의 배달 클라이언트는 응답을 기다리고, {@code WebhookScheduler}는
-     * {@code executor.close()}로 배치 전체의 완료를 기다리며, 스케줄러 스레드는 1개다.
-     * merchant가 여기서 승인 호출(수백 ms~수 초)을 하면 그 대기가 payment의 웹훅 틱을 잡고,
-     * 같은 스레드를 쓰는 inquiry·FDS·잔액 플러시까지 함께 멈춘다. 최악의 경우 merchant가
-     * 기다리는 UNKNOWN을 해소해줄 inquiry가 바로 그 대기 때문에 못 도는 순환 정지가 된다.
+     * <p>payment의 배달 클라이언트는 응답을 기다리고, 배달은 커밋한 스레드(가맹점 API의 Tomcat
+     * 스레드이거나 UNKNOWN을 복구 중인 inquiry 스케줄러 스레드)가 넘긴 작업이다. merchant가
+     * 여기서 승인 호출(수백 ms~수 초)을 하면 그 대기가 payment의 배달 워커를 잡고,
+     * 스케줄러가 안전망으로 도는 경로에서는 복구 루프까지 함께 늘어진다.
      *
      * <p>중복 제거가 필요한 이유: 배달은 at-least-once다. {@code deliver()}의 try 블록 안에
      * {@code completeWebhook}이 들어 있어 배달 성공 후 완료 마킹이 실패하면 재배달되고,
-     * {@code /admin/scheduler/run-now}는 스케줄 틱과 동시에 돌 수 있는데 대상 조회에 락이 없다.
-     * payment 쪽 정합성은 멱등키가 지켜주지만 <b>지연 통계는 이중 계상으로 오염된다.</b>
+     * 즉시 배달과 스케줄러가 같은 행을 동시에 집을 수도 있다. payment 쪽 정합성은 멱등키가
+     * 지켜주지만 <b>지연 통계는 이중 계상으로 오염된다.</b>
      */
     public void enqueueWebhook(PaymentWebhookRequest request) {
         if (request.eventId() != null && !processedEventIds.add(request.eventId())) {
@@ -135,23 +169,27 @@ public class PaymentFlow {
             try {
                 onWebhook(request);
             } catch (Exception e) {
-                log.warn("webhook handling failed. eventType={}, paymentKey={}",
-                        request.eventType(), request.paymentKey(), e);
+                log.warn("webhook handling failed. eventType={}, orderId={}",
+                        request.eventType(), request.orderId(), e);
             }
         });
     }
 
     private void onWebhook(PaymentWebhookRequest request) {
+        String orderId = flowKey(request.merchantId(), request.orderId());
         String paymentKey = request.paymentKey();
+        if (orderId == null) {
+            return;
+        }
         switch (request.eventType()) {
-            case "ready"    -> approve(paymentKey);
-            case "done"     -> onApproved(paymentKey);
-            case "captured" -> recorder.captureResolved(paymentKey);
+            case "ready"    -> approve(orderId, paymentKey);
+            case "done"     -> onApproved(orderId, paymentKey);
+            case "captured" -> recorder.captureResolved(orderId);
             case "failed"   -> {
                 if ("CAPTURE".equals(request.failedStage())) {
-                    recorder.captureResolved(paymentKey);
+                    recorder.captureResolved(orderId);
                 } else {
-                    recorder.fail(paymentKey);
+                    recorder.fail(orderId);
                 }
             }
             default -> log.debug("unhandled webhook eventType={}", request.eventType());
@@ -160,35 +198,35 @@ public class PaymentFlow {
 
     // ── 단계 ────────────────────────────────────────────────────────────────
 
-    private void approve(String paymentKey) {
-        if (paymentKey == null || !approveInitiated.add(paymentKey)) {
+    private void approve(String orderId, String paymentKey) {
+        if (orderId == null || paymentKey == null || !approveInitiated.add(orderId)) {
             return;
         }
         try {
             ResponseEntity<String> response = paymentClient.approve(paymentKey);
             int code = response.getStatusCode().value();
             if (code == 422) {
-                recorder.fail(paymentKey);
+                recorder.fail(orderId);
                 return;
             }
             if (code != 200) {
                 // 409 = 이미 진행 중(UNKNOWN) → done 웹훅이 마무리한다
-                recorder.markUnknown(paymentKey);
+                recorder.markUnknown(orderId);
                 return;
             }
 
             String status = text(parse(response.getBody()), "status");
             if ("APPROVED".equals(status)) {
-                onApproved(paymentKey);
+                onApproved(orderId, paymentKey);
             } else if (status != null && status.startsWith("UNKNOWN")) {
-                recorder.markUnknown(paymentKey);
+                recorder.markUnknown(orderId);
             } else if ("APPROVE_FAILED".equals(status)) {
-                recorder.fail(paymentKey);
+                recorder.fail(orderId);
             }
         } catch (Exception e) {
             // ready 웹훅이 다시 시도할 수 있도록 초기화 표시를 되돌린다
-            approveInitiated.remove(paymentKey);
-            log.warn("approve call failed. paymentKey={}", paymentKey, e);
+            approveInitiated.remove(orderId);
+            log.warn("approve call failed. orderId={}", orderId, e);
         }
     }
 
@@ -199,23 +237,23 @@ public class PaymentFlow {
      * <p>지연을 먼저 확정하고 그 다음에 매입을 발사한다 — 순서가 반대면 매입 호출 시간이
      * 사용자 지연에 섞인다.
      */
-    private void onApproved(String paymentKey) {
-        if (paymentKey == null || !recorder.completeApproved(paymentKey)) {
+    private void onApproved(String orderId, String paymentKey) {
+        if (orderId == null || paymentKey == null || !recorder.completeApproved(orderId)) {
             return;
         }
         worker.execute(() -> {
             try {
-                capture(paymentKey);
+                capture(orderId, paymentKey);
             } catch (Exception e) {
-                log.warn("capture call failed. paymentKey={}", paymentKey, e);
+                log.warn("capture call failed. orderId={}", orderId, e);
             }
         });
     }
 
-    private void capture(String paymentKey) {
+    private void capture(String orderId, String paymentKey) {
         // 매입 지연은 payment의 처리 시간을 재는 것이므로, merchant 워커 큐에서 대기한 시간이
         // 섞이지 않도록 실제 호출 직전에 시작 시각을 찍는다.
-        recorder.captureFired(paymentKey);
+        recorder.captureFired(orderId);
 
         ResponseEntity<String> response = paymentClient.capture(paymentKey);
         if (response.getStatusCode().value() != 200) {
@@ -223,7 +261,7 @@ public class PaymentFlow {
         }
         String captureStatus = text(parse(response.getBody()), "captureStatus");
         if ("SUCCEEDED".equals(captureStatus) || "FAIL".equals(captureStatus)) {
-            recorder.captureResolved(paymentKey);
+            recorder.captureResolved(orderId);
         }
         // UNKNOWN → captured / failed(CAPTURE) 웹훅이 확정한다
     }
@@ -242,7 +280,7 @@ public class PaymentFlow {
         try {
             return objectMapper.readTree(body);
         } catch (Exception e) {
-            log.warn("unparseable payment response: {}", body, e);
+            log.warn("unparseable json: {}", body, e);
             return null;
         }
     }

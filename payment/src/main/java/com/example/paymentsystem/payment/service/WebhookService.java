@@ -6,6 +6,7 @@ import com.example.paymentsystem.payment.domain.WebhookOutboxStatus;
 import com.example.paymentsystem.payment.dto.PaymentWebhookRequest;
 import com.example.paymentsystem.payment.repository.WebhookOutboxRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +15,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -31,8 +33,21 @@ public class WebhookService {
     private static final String WEBHOOK_FAILED = "failed";
 
 
+    /**
+     * 아웃박스 행이 태어날 때 스케줄러가 이 시간만큼 못 보게 막는다.
+     *
+     * <p>정상 경로는 커밋 직후 리스너가 즉시 배달하므로 이 값을 쳐다보지도 않는다.
+     * 유예를 무는 건 <b>즉시 배달이 실패했거나 아예 못 돈 건</b>뿐이다.
+     *
+     * <p>5초인 이유는 웹훅 클라이언트의 socket 타임아웃이 3초이기 때문이다. 유예가 그보다
+     * 짧으면 느리지만 결국 성공할 즉시 배달이 아직 진행 중인데 스케줄러가 같은 행으로
+     * 중복 배달을 시작한다 — 확보하려는 배달 용량을 그대로 낭비하게 된다.
+     */
+    private static final Duration DISPATCH_GRACE = Duration.ofSeconds(5);
+
     private final ObjectMapper objectMapper;
     private final WebhookOutboxRepository repository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void saveReadyForApprove(PaymentIntent paymentIntent) {
@@ -94,10 +109,14 @@ public class WebhookService {
                 paymentIntent.getPaymentKey(),
                 PAYMENT_STATUS_CHANGED,
                 payload,
-                Instant.now()
+                Instant.now().plus(DISPATCH_GRACE)
         );
 
         repository.save(outbox);
+
+        // 커밋 후 즉시 배달 트리거. 아웃박스 행은 그대로 남으므로, 이 이벤트가 유실돼도
+        // (커밋 직후 크래시 등) 유예 시간이 지나면 스케줄러가 같은 행을 가져간다.
+        eventPublisher.publishEvent(new WebhookQueued(outbox.getId()));
     }
 
     @Transactional(readOnly = true)
@@ -106,6 +125,13 @@ public class WebhookService {
                 WebhookOutboxStatus.PENDING,
                 Instant.now()
         );
+    }
+
+    /** 즉시 배달 경로용 — 그 사이 스케줄러가 이미 보냈으면 비어 있다. */
+    @Transactional(readOnly = true)
+    public Optional<WebhookOutbox> findPending(Long outboxId) {
+        return repository.findById(outboxId)
+                .filter(outbox -> outbox.getStatus() == WebhookOutboxStatus.PENDING);
     }
 
     @Transactional

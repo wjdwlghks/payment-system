@@ -40,8 +40,12 @@ public class ConvergenceController {
         long pendingWebhook     = outboxRepository.countByStatus(WebhookOutboxStatus.PENDING);
         long processingIdempotencyKeys = idempotencyKeyRepository.countByStatus(IdempotentStatus.PROCESSING);
 
+        // pendingWebhook을 판정에 넣는다. 빼면 "UNKNOWN은 다 풀렸는데 그 사실을 가맹점에
+        // 알리는 통로가 수천 건 막혀 있는" 상태를 converged=true로 보고하게 된다 —
+        // 150 TPS 실측에서 실제로 pendingWebhook=6583인데 converged=true가 나왔다.
         boolean converged = unknownTx == 0 && staleRequested == 0
-                && authenticated == 0 && processingIdempotencyKeys == 0;
+                && authenticated == 0 && processingIdempotencyKeys == 0
+                && pendingWebhook == 0;
 
         return new ConvergenceStatus(
                 unknownTx, staleRequested, authenticated, fdsPassed, pendingWebhook, processingIdempotencyKeys, converged);

@@ -53,11 +53,11 @@ public class FdsExecutionService {
         externalCallExecutor.execute(
                 () -> fdsClient.check(checkRequest),
                 response -> response.success()
-                        ? paymentCommandService.completeFdsAndComplete(fdsContext.transactionId(), response.externalId(), idempotentKey)
-                        : paymentCommandService.failFdsAndComplete(fdsContext.transactionId(), response.externalId(), idempotentKey),
+                        ? paymentCommandService.completeFds(fdsContext.transactionId(), response.externalId(), idempotentKey)
+                        : paymentCommandService.failFds(fdsContext.transactionId(), response.externalId(), idempotentKey),
                 // UNKNOWN은 확정이 아니므로 멱등키를 완결하지 않는다 — InquiryScheduler가 이어받는다.
                 () -> paymentCommandService.unknownFds(fdsContext.transactionId()),
-                () -> paymentCommandService.failFdsAndComplete(fdsContext.transactionId(), null, idempotentKey)
+                () -> paymentCommandService.failFds(fdsContext.transactionId(), null, idempotentKey)
         );
     }
 }

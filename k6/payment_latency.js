@@ -36,8 +36,17 @@ const CARD_B   = __ENV.CARD_B   || 'http://localhost:8085';
 const FDS      = __ENV.FDS      || 'http://localhost:8083';
 
 const JSON_HDR  = { headers: { 'Content-Type': 'application/json' } };
+
+// PROB는 "지점당 장애율"이 아니라 <b>룰 하나가 발동할 확률</b>이다.
+// FailureRegistry.consumeByAlias가 한 alias의 룰들을 전부 순회하며 각자 독립적으로 판정하고
+// 통과한 것 중 첫 번째를 적용하기 때문이다. 지점마다 룰이 4개(서버 3종 + 클라이언트 CONNECT_FAILURE)
+// 걸리므로 실효 장애율 ≈ 1 - (1-PROB)^4. PROB=0.027이면 지점당 약 10.4%.
 const PROB      = parseFloat(__ENV.PROB) || 0.027;
 const REMAINING = parseInt(__ENV.REMAINING) || 10_000_000;
+
+// 매입 장애는 기본으로 끈다. 사용자 지연은 승인까지라 매입 장애가 측정값에 안 들어오고,
+// 매입에 UNKNOWN을 섞으면 매입 지연 분포만 흐려진다. 나중에 매입 경로를 따로 볼 때 켠다.
+const CAPTURE_FAILURE = (__ENV.CAPTURE_FAILURE || 'false') === 'true';
 
 const TPS      = parseInt(__ENV.TPS)      || 20;
 const DURATION = __ENV.DURATION           || '2m';
@@ -81,16 +90,19 @@ export function setup() {
   [CARD_A, CARD_B].forEach(card => {
     injectServerFailures(card, 'auth');
     injectServerFailures(card, 'approve');
-    injectServerFailures(card, 'capture');
+    if (CAPTURE_FAILURE) injectServerFailures(card, 'capture');
   });
   injectServerFailures(FDS, 'fds_check');
 
   injectConnectFailure('card_auth');
   injectConnectFailure('fds_check');
   injectConnectFailure('card_approve');
-  injectConnectFailure('card_capture');
+  if (CAPTURE_FAILURE) injectConnectFailure('card_capture');
 
-  console.log(`[setup] failures injected (prob=${PROB} per rule), merchant latency reset`);
+  const stages = CAPTURE_FAILURE ? 'auth/fds/approve/capture' : 'auth/fds/approve';
+  const effective = (100 * (1 - Math.pow(1 - PROB, 4))).toFixed(1);
+  console.log(`[setup] failures on ${stages} (prob=${PROB} per rule, 4 rules -> ~${effective}% per stage)`);
+  console.log('[setup] merchant latency reset');
 }
 
 export function teardown() {
@@ -127,4 +139,39 @@ export default function () {
   if (status === 'FDS_PASSED')            acceptedSync.add(1);
   else if (String(status).startsWith('UNKNOWN')) acceptedUnknown.add(1);
   else                                    rejected.add(1);
+}
+
+// ── 처리량 요약 ───────────────────────────────────────────────
+// 세 가지를 구분해서 본다:
+//   offered   — 목표 발생률(TPS 설정값)
+//   achieved  — 실제로 merchant가 접수한 초당 건수. dropped_iterations가 크면 여기서 벌어진다.
+//   완료율은 k6가 모르므로 merchant/admin/latency 쪽 completed로 따로 계산한다.
+export function handleSummary(data) {
+  const m = data.metrics;
+  const val = (name, field) => (m[name] && m[name].values[field] !== undefined ? m[name].values[field] : 0);
+  const durationSec = data.state.testRunDurationMs / 1000;
+
+  const summary = {
+    durationSec: Number(durationSec.toFixed(1)),
+    offeredRps: TPS,
+    achievedRps: Number(val('requested', 'rate').toFixed(1)),
+    requested: val('requested', 'count'),
+    acceptedSync: val('accepted_sync', 'count'),
+    acceptedUnknown: val('accepted_unknown', 'count'),
+    rejected: val('rejected', 'count'),
+    httpError: val('http_error', 'count'),
+    droppedIterations: val('dropped_iterations', 'count'),
+    merchantRequestMs: {
+      p50: Math.round(val('http_req_duration', 'med')),
+      p95: Math.round(val('http_req_duration', 'p(95)')),
+      max: Math.round(val('http_req_duration', 'max')),
+    },
+  };
+
+  const out = {};
+  if (__ENV.SUMMARY_OUT) {
+    out[__ENV.SUMMARY_OUT] = JSON.stringify(summary, null, 2);
+  }
+  out.stdout = '\n' + JSON.stringify(summary, null, 2) + '\n';
+  return out;
 }

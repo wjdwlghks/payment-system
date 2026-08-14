@@ -59,7 +59,7 @@ public class PaymentService {
                 // UNKNOWN은 확정된 결과가 아니므로 멱등키를 완결하지 않는다 — PROCESSING을 유지한 채
                 // InquiryScheduler가 실제 상태를 확정하는 시점에 그 트랜잭션에서 완결된다.
                 () -> toApiResult(paymentCommandService.unknownAuth(authContext.transactionId())),
-                () -> paymentCommandService.failAuthAndComplete(authContext.transactionId(), null, idempotentKey)
+                () -> paymentCommandService.failAuth(authContext.transactionId(), null, idempotentKey)
         );
     }
 
@@ -102,7 +102,7 @@ public class PaymentService {
             CardAuthResponse response
     ) {
         if (!response.success()) {
-            return paymentCommandService.failAuthAndComplete(context.transactionId(), response.externalId(), idempotentKey);
+            return paymentCommandService.failAuth(context.transactionId(), response.externalId(), idempotentKey);
         }
 
         FdsRequestContext fdsContext = paymentCommandService.completeAuthAndRequestFds(
@@ -124,7 +124,7 @@ public class PaymentService {
                 () -> fdsClient.check(checkRequest),
                 response -> handleFdsResponse(idempotentKey, fdsContext, response),
                 () -> toApiResult(paymentCommandService.unknownFds(fdsContext.transactionId())),
-                () -> paymentCommandService.failFdsAndComplete(fdsContext.transactionId(), null, idempotentKey)
+                () -> paymentCommandService.failFds(fdsContext.transactionId(), null, idempotentKey)
         );
     }
 
@@ -134,8 +134,8 @@ public class PaymentService {
             FdsCheckResponse response
     ) {
         return response.success()
-                ? paymentCommandService.completeFdsAndComplete(context.transactionId(), response.externalId(), idempotentKey)
-                : paymentCommandService.failFdsAndComplete(context.transactionId(), response.externalId(), idempotentKey);
+                ? paymentCommandService.completeFds(context.transactionId(), response.externalId(), idempotentKey)
+                : paymentCommandService.failFds(context.transactionId(), response.externalId(), idempotentKey);
     }
 
     // 병합 트랜잭션이 유니크 제약 위반으로 롤백된 뒤, 기존 idempotency key를 조회해 재생/거절을 결정한다.

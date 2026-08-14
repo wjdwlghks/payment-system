@@ -38,25 +38,29 @@ public class LatencyRecorder {
 
     /**
      * 결제 요청 등록. {@code startNanos}는 <b>요청을 보내기 직전</b>에 찍은 값이어야 한다 —
-     * 응답을 받은 뒤에 찍으면 인증+FDS 왕복이 통째로 측정에서 빠진다. paymentKey는 응답에서만
-     * 알 수 있으므로 시각과 키를 따로 받는다.
+     * 응답을 받은 뒤에 찍으면 인증+FDS 왕복이 통째로 측정에서 빠진다.
+     *
+     * <p>키가 paymentKey가 아니라 orderId인 이유: paymentKey는 payment가 만들어 응답에 실어주므로
+     * 요청을 보내기 전에는 알 수 없다. 그런데 즉시 배달이 도입되면서 웹훅이 HTTP 응답을
+     * <b>추월</b>할 수 있게 됐고, 그때 paymentKey로 등록돼 있지 않으면 웹훅이 orphan으로 떨어져
+     * 그 결제는 지연도 못 재고 매입도 못 나간다. orderId는 가맹점이 만든 값이라 t0 시점에 이미 안다.
      */
-    public void start(String paymentKey, long startNanos, boolean sawUnknown) {
-        if (paymentKey == null) {
+    public void start(String orderId, long startNanos, boolean sawUnknown) {
+        if (orderId == null) {
             return;
         }
         Flow flow = new Flow(startNanos);
         if (sawUnknown) {
             flow.sawUnknown = true;
         }
-        if (flows.putIfAbsent(paymentKey, flow) == null) {
+        if (flows.putIfAbsent(orderId, flow) == null) {
             started.incrementAndGet();
         }
     }
 
     /** 승인이 UNKNOWN으로 끝났을 때처럼, 시작 이후에 UNKNOWN을 만난 경우. */
-    public void markUnknown(String paymentKey) {
-        Flow flow = flows.get(paymentKey);
+    public void markUnknown(String orderId) {
+        Flow flow = flows.get(orderId);
         if (flow != null) {
             flow.sawUnknown = true;
         }
@@ -67,8 +71,8 @@ public class LatencyRecorder {
      * 동기 응답과 {@code done} 웹훅이 모두 도착하므로 두 번 불리는 게 정상이고,
      * 두 번째는 false를 받아 매입을 중복 발사하지 않는다.
      */
-    public boolean completeApproved(String paymentKey) {
-        Flow flow = flows.get(paymentKey);
+    public boolean completeApproved(String orderId) {
+        Flow flow = flows.get(orderId);
         if (flow == null) {
             orphanWebhooks.incrementAndGet();
             return false;
@@ -82,15 +86,15 @@ public class LatencyRecorder {
     }
 
     /** 인증/FDS/승인 어느 단계든 확정 실패. 지연 분포에서는 제외하고 건수만 센다. */
-    public void fail(String paymentKey) {
-        Flow flow = flows.get(paymentKey);
+    public void fail(String orderId) {
+        Flow flow = flows.get(orderId);
         if (flow != null && flow.completed.compareAndSet(false, true)) {
             failed.incrementAndGet();
         }
     }
 
-    public void captureFired(String paymentKey) {
-        Flow flow = flows.get(paymentKey);
+    public void captureFired(String orderId) {
+        Flow flow = flows.get(orderId);
         if (flow != null) {
             flow.captureFiredNanos = System.nanoTime();
         }
@@ -102,8 +106,8 @@ public class LatencyRecorder {
      * <p>동기 매입 응답과 {@code captured} 웹훅이 <b>둘 다</b> 도착하므로 두 번 불린다 —
      * CAS로 최초 1회만 표본에 넣는다.
      */
-    public void captureResolved(String paymentKey) {
-        Flow flow = flows.get(paymentKey);
+    public void captureResolved(String orderId) {
+        Flow flow = flows.get(orderId);
         if (flow == null || flow.captureFiredNanos == 0L) {
             return;
         }
@@ -202,7 +206,7 @@ public class LatencyRecorder {
      * @param inFlight       시작했지만 아직 APPROVED에도 실패에도 도달 못 한 건수.
      *                       0으로 안 떨어지면 분포에서 <b>가장 느린 건들이 통째로 빠진</b> 것이므로
      *                       그 런의 지연값은 낙관 편향이다.
-     * @param orphanWebhooks 시작 기록이 없는 paymentKey로 온 웹훅. reset 이후 잔여분이 아니라면
+     * @param orphanWebhooks 시작 기록이 없는 orderId로 온 웹훅. reset 이후 잔여분이 아니라면
      *                       측정 로직에 구멍이 있다는 신호.
      * @param workerQueueDepth 워커 대기 큐 깊이. 계속 쌓였다면 merchant가 병목이었다는 뜻이고,
      *                       그 런의 지연값에는 merchant 자체 대기가 섞여 있어 버려야 한다.

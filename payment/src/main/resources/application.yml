@@ -1,6 +1,15 @@
 spring:
   application:
     name: payment
+  task:
+    scheduling:
+      pool:
+        # 기본값 1이면 @Scheduled 6개가 한 스레드를 공유해, 느린 틱 하나가 나머지를 전부 막는다.
+        # (예: 카드사가 응답을 안 주면 inquiry 한 틱이 300건 x 3s socket timeout까지 늘어지고
+        #  그동안 웹훅 배달도 잔액 플러시도 정지한다.)
+        # 스케줄 메서드 수(6) + 여유. 서로 다른 스케줄러만 겹치고, 같은 메서드는
+        # ScheduledThreadPoolExecutor가 여전히 자기 자신과 겹치지 않게 보장한다.
+        size: 8
   datasource:
     url: jdbc:mysql://${MYSQL_HOST:payment-mysql}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:payment}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: ${MYSQL_USER:payment}

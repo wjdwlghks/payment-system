@@ -2,6 +2,15 @@ spring:
   application:
     name: merchant
 
+# merchant는 측정 도구다 — 여기가 병목이 되면 지연값에 merchant 대기가 섞여 못 쓰게 된다.
+# 결제 요청 하나가 payment의 카드사 왕복(장애 시 최대 3s)이 끝날 때까지 스레드를 잡으므로
+# 고TPS에서 기본 200으로는 부족하다. 웹훅 수신도 같은 스레드풀을 쓰기 때문에, 여기가 마르면
+# payment의 웹훅 배달이 밀려 지연이 실제보다 부풀려진다.
+server:
+  tomcat:
+    threads:
+      max: 400
+
 payment:
   base-url: ${PAYMENT_BASE_URL:http://payment:8080}
 

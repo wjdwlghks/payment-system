@@ -18,8 +18,10 @@ import com.example.paymentsystem.payment.dto.PaymentResponse;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,20 +43,43 @@ public class InquiryService {
     private final FdsExecutionService fdsExecutionService;
     private final RecoveryCounter recoveryCounter;
 
-    @Transactional(readOnly = true)
-    public List<PaymentTransaction> getUnknowns() {
-        return paymentTransactionRepository
-                .findTop300WithIntentByStatusOrderByUpdatedAtAsc(TransactionStatus.UNKNOWN);
+    /**
+     * 조회할 때가 된 UNKNOWN 한 페이지를 <b>선점해서</b> 돌려준다.
+     * 반환 시점에 이미 다음 조회 시각이 밀려 있으므로, 호출부가 이걸로 뭘 하든(또는 못 하든)
+     * 같은 행이 곧바로 다시 잡히지 않는다.
+     */
+    @Transactional
+    public List<PaymentTransaction> claimDueUnknowns(int pageSize) {
+        Instant now = Instant.now();
+        return claim(paymentTransactionRepository.findDueUnknown(now, Limit.of(pageSize)), now);
     }
 
-    @Transactional(readOnly = true)
-    public List<PaymentTransaction> getStaleRequested() {
-        Instant threshold = Instant.now().minus(STALE_REQUESTED_THRESHOLD);
-        return paymentTransactionRepository
-                .findTop300WithIntentByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
-                        TransactionStatus.REQUESTED,
-                        threshold
-                );
+    /** REQUESTED로 방치된 것들. 첫 자격은 updated_at, 이후는 백오프가 정한다. */
+    @Transactional
+    public List<PaymentTransaction> claimDueStaleRequested(int pageSize) {
+        Instant now = Instant.now();
+        List<PaymentTransaction> page = paymentTransactionRepository.findDueStaleRequested(
+                now, now.minus(STALE_REQUESTED_THRESHOLD), Limit.of(pageSize));
+        return claim(page, now);
+    }
+
+    /**
+     * 백오프 단계가 행마다 달라 한 문장으로는 못 민다. 단계별로 묶어서 UPDATE하면
+     * 사다리 칸 수만큼(5~6개)으로 끝나고, 백오프 정책은 Java에 남는다 —
+     * 행마다 UPDATE를 날리면 커밋이 300번이 되고, SQL에 CASE로 넣으면 정책이 이원화된다.
+     */
+    private List<PaymentTransaction> claim(List<PaymentTransaction> page, Instant now) {
+        if (page.isEmpty()) {
+            return page;
+        }
+        page.stream()
+                .collect(Collectors.groupingBy(PaymentTransaction::getInquiryAttempts))
+                .forEach((attempts, txs) -> paymentTransactionRepository.claimForInquiry(
+                        txs.stream().map(PaymentTransaction::getId).toList(),
+                        now.plus(InquiryBackoff.of(attempts + 1)),
+                        now
+                ));
+        return page;
     }
 
     public void inquiryAuth(PaymentTransaction transaction) {
@@ -65,7 +90,7 @@ public class InquiryService {
                 () -> cardClient.inquiryAuth(company, cardRequestRef),
                 response -> handleAuthInquiry(transaction, response),
                 () -> {},
-                () -> paymentCommandService.failAuthAndComplete(
+                () -> paymentCommandService.failAuth(
                         transaction.getId(), null, requestKey(transaction))
         );
     }
@@ -77,7 +102,7 @@ public class InquiryService {
                 () -> fdsClient.inquiry(cardRequestRef),
                 response -> handleFdsInquiry(transaction, response),
                 () -> {},
-                () -> paymentCommandService.failFdsAndComplete(
+                () -> paymentCommandService.failFds(
                         transaction.getId(), null, requestKey(transaction))
         );
     }
@@ -90,7 +115,7 @@ public class InquiryService {
                 () -> cardClient.inquiryApprove(company, cardRequestRef),
                 response -> handleApproveInquiry(transaction, response),
                 () -> {},
-                () -> paymentCommandService.failApproveAndComplete(
+                () -> paymentCommandService.failApprove(
                         transaction.getId(), null, approveKey(transaction))
         );
     }
@@ -102,9 +127,9 @@ public class InquiryService {
             // AUTH 성공은 request phase의 종료가 아니다(FDS가 남음) — 멱등키는 PROCESSING을 유지한 채
             // 이 자리에서 FDS까지 이어 실행하고, FDS가 확정되는 트랜잭션에서 완결한다.
             case "success" -> completeAuthAndContinueToFds(transaction, response);
-            case "failed" -> paymentCommandService.failAuthAndComplete(
+            case "failed" -> paymentCommandService.failAuth(
                     transaction.getId(), response.externalId(), idempotentKey);
-            case "not_found" -> paymentCommandService.failAuthAndComplete(
+            case "not_found" -> paymentCommandService.failAuth(
                     transaction.getId(), null, idempotentKey);
             case "in_progress" -> {}
         }
@@ -145,11 +170,11 @@ public class InquiryService {
         recoveryCounter.incrementInquiryResult("fds", response.status());
         String idempotentKey = requestKey(transaction);
         switch (response.status()) {
-            case "success" -> paymentCommandService.completeFdsAndComplete(
+            case "success" -> paymentCommandService.completeFds(
                     transaction.getId(), response.externalId(), idempotentKey);
-            case "failed" -> paymentCommandService.failFdsAndComplete(
+            case "failed" -> paymentCommandService.failFds(
                     transaction.getId(), response.externalId(), idempotentKey);
-            case "not_found" -> paymentCommandService.failFdsAndComplete(
+            case "not_found" -> paymentCommandService.failFds(
                     transaction.getId(), null, idempotentKey);
             case "in_progress" -> {}
         }
@@ -183,11 +208,11 @@ public class InquiryService {
         recoveryCounter.incrementInquiryResult("approve", response.status());
         String idempotentKey = approveKey(transaction);
         switch (response.status()) {
-            case "success" -> paymentCommandService.completeApproveAndComplete(
+            case "success" -> paymentCommandService.completeApprove(
                     transaction.getId(), response.externalId(), idempotentKey);
-            case "failed" -> paymentCommandService.failApproveAndComplete(
+            case "failed" -> paymentCommandService.failApprove(
                     transaction.getId(), response.externalId(), idempotentKey);
-            case "not_found" -> paymentCommandService.failApproveAndComplete(
+            case "not_found" -> paymentCommandService.failApprove(
                     transaction.getId(), null, idempotentKey);
             case "in_progress" -> {}
         }

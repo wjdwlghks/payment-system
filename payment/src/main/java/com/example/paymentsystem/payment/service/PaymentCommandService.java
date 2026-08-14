@@ -77,6 +77,11 @@ public class PaymentCommandService {
         );
     }
 
+    /**
+     * 이 계열에서 <b>유일하게 멱등키를 완결하지 않는</b> 메서드다. AUTH 성공은 request phase의
+     * 종료가 아니라 FDS가 남아 있기 때문 — 키는 PROCESSING을 유지하고, FDS가 확정되는
+     * 트랜잭션에서 완결된다. 나머지 complete·fail 계열은 모두 그 자리에서 키까지 완결한다.
+     */
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
     public PaymentResponse completeAuth(Long transactionId, String externalId, Instant authenticatedAt) {
@@ -125,26 +130,13 @@ public class PaymentCommandService {
         );
     }
 
-    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
-    @Transactional
-    public PaymentResponse failAuth(Long transactionId, String externalId) {
-        PaymentTransaction transaction = getTransaction(transactionId);
-        PaymentIntent paymentIntent = transaction.getPaymentIntent();
-        if (transaction.getStatus() != TransactionStatus.REQUESTED
-                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
-            return toResponse(paymentIntent);
-        }
-        paymentIntent.markAuthFailed();
-        markFail(transaction, externalId);
-        webhookService.saveAuthFailed(paymentIntent);
-        return toResponse(paymentIntent);
-    }
 
-    // 병합 트랜잭션: failAuth + idempotent complete.
+    // 상태 전이 + 웹훅 아웃박스 + 멱등키 완결을 한 트랜잭션에 묶는다 — 크래시가
+    // "결제는 끝났는데 멱등키는 PROCESSING"을 만들지 못하게 하는 게 목적이다.
     // AUTH phase가 종료 상태가 되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentApiResult failAuthAndComplete(Long transactionId, String externalId, String idempotentKey) {
+    public PaymentApiResult failAuth(Long transactionId, String externalId, String idempotentKey) {
         PaymentTransaction transaction = getTransaction(transactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() == TransactionStatus.REQUESTED || transaction.getStatus() == TransactionStatus.UNKNOWN) {
@@ -207,26 +199,12 @@ public class PaymentCommandService {
         );
     }
 
-    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
-    @Transactional
-    public PaymentResponse failFds(Long transactionId, String externalId) {
-        PaymentTransaction transaction = getTransaction(transactionId);
-        PaymentIntent paymentIntent = transaction.getPaymentIntent();
-        if (transaction.getStatus() != TransactionStatus.REQUESTED
-                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
-            return toResponse(paymentIntent);
-        }
-        paymentIntent.markFdsFailed();
-        markFail(transaction, externalId);
-        webhookService.saveFdsFailed(paymentIntent);
-        return toResponse(paymentIntent);
-    }
 
-    // 병합 트랜잭션: failFds + idempotent complete.
+    // 상태 전이 + 웹훅 아웃박스 + 멱등키 완결이 한 트랜잭션.
     // request phase가 종료되는 지점 — 동기 흐름 / inquiry / FdsScheduler가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentApiResult failFdsAndComplete(Long transactionId, String externalId, String idempotentKey) {
+    public PaymentApiResult failFds(Long transactionId, String externalId, String idempotentKey) {
         PaymentTransaction transaction = getTransaction(transactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() == TransactionStatus.REQUESTED || transaction.getStatus() == TransactionStatus.UNKNOWN) {
@@ -237,26 +215,12 @@ public class PaymentCommandService {
         return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, toResponse(paymentIntent));
     }
 
-    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
-    @Transactional
-    public PaymentResponse completeFds(Long transactionId, String externalId) {
-        PaymentTransaction transaction = getTransaction(transactionId);
-        PaymentIntent paymentIntent = transaction.getPaymentIntent();
-        if (transaction.getStatus() != TransactionStatus.REQUESTED
-                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
-            return toResponse(paymentIntent);
-        }
-        paymentIntent.markFdsPassed();
-        transaction.markSucceeded(externalId);
-        webhookService.saveReadyForApprove(paymentIntent);
-        return toResponse(paymentIntent);
-    }
 
-    // 병합 트랜잭션: completeFds + idempotent complete.
+    // 상태 전이 + 웹훅 아웃박스 + 멱등키 완결이 한 트랜잭션.
     // request phase가 종료되는 지점 — 동기 흐름 / inquiry / FdsScheduler가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentApiResult completeFdsAndComplete(Long transactionId, String externalId, String idempotentKey) {
+    public PaymentApiResult completeFds(Long transactionId, String externalId, String idempotentKey) {
         PaymentTransaction transaction = getTransaction(transactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() == TransactionStatus.REQUESTED || transaction.getStatus() == TransactionStatus.UNKNOWN) {
@@ -267,26 +231,12 @@ public class PaymentCommandService {
         return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_REQUEST, toResponse(paymentIntent));
     }
 
-    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
-    @Transactional
-    public PaymentResponse failApprove(Long transactionId, String externalId) {
-        PaymentTransaction transaction = getTransaction(transactionId);
-        PaymentIntent paymentIntent = transaction.getPaymentIntent();
-        if (transaction.getStatus() != TransactionStatus.REQUESTED
-                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
-            return toResponse(paymentIntent);
-        }
-        paymentIntent.markApproveFailed();
-        markFail(transaction, externalId);
-        webhookService.saveApproveFailed(paymentIntent);
-        return toResponse(paymentIntent);
-    }
 
-    // 병합 트랜잭션: failApprove + idempotent complete.
+    // 상태 전이 + 웹훅 아웃박스 + 멱등키 완결이 한 트랜잭션.
     // 승인 단계가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentApiResult failApproveAndComplete(Long transactionId, String externalId, String idempotentKey) {
+    public PaymentApiResult failApprove(Long transactionId, String externalId, String idempotentKey) {
         PaymentTransaction transaction = getTransaction(transactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() == TransactionStatus.REQUESTED || transaction.getStatus() == TransactionStatus.UNKNOWN) {
@@ -297,26 +247,12 @@ public class PaymentCommandService {
         return completeIdempotentRequest(idempotentKey, IdempotencyOperation.PAYMENT_APPROVE, toResponse(paymentIntent));
     }
 
-    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
-    @Transactional
-    public PaymentResponse completeApprove(Long approveTransactionId, String externalId) {
-        PaymentTransaction transaction = getTransaction(approveTransactionId);
-        PaymentIntent paymentIntent = transaction.getPaymentIntent();
-        if (transaction.getStatus() != TransactionStatus.REQUESTED
-                && transaction.getStatus() != TransactionStatus.UNKNOWN) {
-            return toResponse(paymentIntent);
-        }
-        paymentIntent.markApproved(externalId);
-        transaction.markSucceeded(externalId);
-        webhookService.savePaymentComplete(paymentIntent);
-        return toResponse(paymentIntent);
-    }
 
-    // 병합 트랜잭션: completeApprove + idempotent complete.
+    // 상태 전이 + 웹훅 아웃박스 + 멱등키 완결이 한 트랜잭션.
     // 승인 단계가 종료되는 지점 — 동기 흐름과 inquiry 복구 경로가 공유한다.
     @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public PaymentApiResult completeApproveAndComplete(Long approveTransactionId, String externalId, String idempotentKey) {
+    public PaymentApiResult completeApprove(Long approveTransactionId, String externalId, String idempotentKey) {
         PaymentTransaction transaction = getTransaction(approveTransactionId);
         PaymentIntent paymentIntent = transaction.getPaymentIntent();
         if (transaction.getStatus() == TransactionStatus.REQUESTED || transaction.getStatus() == TransactionStatus.UNKNOWN) {
