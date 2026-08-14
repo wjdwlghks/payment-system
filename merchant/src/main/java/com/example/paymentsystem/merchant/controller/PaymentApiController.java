@@ -1,50 +1,48 @@
 package com.example.paymentsystem.merchant.controller;
 
-import org.springframework.http.MediaType;
+import com.example.paymentsystem.merchant.client.PaymentClient;
+import com.example.paymentsystem.merchant.component.PaymentFlow;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.RestClient;
 
 @RestController
 @RequestMapping("/api/payments")
 public class PaymentApiController {
 
-    private final RestClient paymentRestClient;
+    private final PaymentClient paymentClient;
+    private final PaymentFlow paymentFlow;
 
-    public PaymentApiController(RestClient paymentRestClient) {
-        this.paymentRestClient = paymentRestClient;
+    public PaymentApiController(PaymentClient paymentClient, PaymentFlow paymentFlow) {
+        this.paymentClient = paymentClient;
+        this.paymentFlow = paymentFlow;
     }
 
+    /**
+     * 부하 생성기가 호출하는 유일한 진입점. 이 요청 이후의 승인·매입은 가맹점이 스스로 이어간다
+     * (동기 응답이 FDS_PASSED면 곧바로, UNKNOWN이면 웹훅을 받고).
+     *
+     * <p>시작 시각을 호출 <b>직전에</b> 찍는다 — 응답을 받은 뒤에 찍으면 인증+FDS 왕복이
+     * 통째로 측정에서 빠진다.
+     */
     @PostMapping
     public ResponseEntity<String> requestPayment(@RequestBody String body) {
-        return paymentRestClient.post()
-                .uri("/v1/payment")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(body)
-                .retrieve()
-                .onStatus(status -> !status.is2xxSuccessful(), (req, res) -> {})
-                .toEntity(String.class);
+        long startNanos = System.nanoTime();
+        ResponseEntity<String> response = paymentClient.requestPayment(body);
+        paymentFlow.onPaymentResponse(startNanos, response);
+        return response;
     }
 
     @PostMapping("/{paymentKey}/approve")
     public ResponseEntity<String> approvePayment(@PathVariable String paymentKey) {
-        return paymentRestClient.post()
-                .uri("/v1/payment/{paymentKey}/approve", paymentKey)
-                .retrieve()
-                .onStatus(status -> !status.is2xxSuccessful(), (req, res) -> {})
-                .toEntity(String.class);
+        return paymentClient.approve(paymentKey);
     }
 
     @PostMapping("/{paymentKey}/capture")
     public ResponseEntity<String> capturePayment(@PathVariable String paymentKey) {
-        return paymentRestClient.post()
-                .uri("/v1/payment/{paymentKey}/capture", paymentKey)
-                .retrieve()
-                .onStatus(status -> !status.is2xxSuccessful(), (req, res) -> {})
-                .toEntity(String.class);
+        return paymentClient.capture(paymentKey);
     }
 }

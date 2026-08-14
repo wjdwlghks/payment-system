@@ -31,6 +31,7 @@ public class CaptureCommandService {
     private final IdempotencyKeyRepository idempotencyKeyRepository;
     private final IdempotentService idempotentService;
     private final LedgerService ledgerService;
+    private final WebhookService webhookService;
     private final ObjectMapper objectMapper;
 
     // 병합 트랜잭션: 멱등키 PROCESSING insert + CAPTURE TX insert.
@@ -77,6 +78,8 @@ public class CaptureCommandService {
                 || transaction.getStatus() == TransactionStatus.UNKNOWN) {
             transaction.markSucceeded(externalId);
             ledgerService.postCapture(captureTransactionId, sourceType);
+            // 웹훅은 상태 전이가 실제로 일어난 경우에만 — 가드 밖에 두면 재생 호출마다 중복 발행된다.
+            webhookService.saveCaptureCompleted(transaction.getPaymentIntent());
         }
         return completeIdempotent(transaction);
     }
@@ -92,6 +95,7 @@ public class CaptureCommandService {
             } else {
                 transaction.markFail(externalId);
             }
+            webhookService.saveCaptureFailed(transaction.getPaymentIntent());
         }
         return completeIdempotent(transaction);
     }

@@ -58,6 +58,14 @@ project(':payment') {
     }
 }
 
+project(':merchant') {
+    dependencies {
+        // 결제 요청/승인/매입을 payment로 내보내는 클라이언트에 타임아웃·커넥션 풀을 주기 위해.
+        // 기본 JDK 클라이언트는 read 타임아웃이 없어 payment가 느려지면 merchant 워커가 무한정 묶인다.
+        implementation 'org.apache.httpcomponents.client5:httpclient5:5.4.4'
+    }
+}
+
 configure([project(':card'), project(':fds')]) {
     dependencies {
         implementation project(':failure')

@@ -15,7 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Recovery path: continues FDS for intents stranded at AUTHENTICATED
  * (auth resolved via inquiry but the request-phase FDS check never ran).
- * Mirrors how the capture step used to be continued for FDS_PASSED intents.
+ *
+ * <p>호출자가 둘이다. {@code InquiryService}가 AUTH를 확정한 직후 곧바로 이어 부르는 것이
+ * 정상 경로이고, {@code FdsScheduler}는 그 인라인 호출이 실패했거나 인라인 호출 자체가 없었던
+ * 건을 주워가는 안전망이다. 스케줄러 주기가 사용자 대기시간에 얹히지 않도록 하는 게 이 분담의 목적.
  *
  * <p>이 경로가 FDS를 종료 상태로 만들면 request phase가 끝나므로, 그 트랜잭션에서
  * PAYMENT_REQUEST 멱등키까지 함께 완결한다.
