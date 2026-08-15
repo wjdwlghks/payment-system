@@ -18,6 +18,7 @@ import com.example.paymentsystem.payment.repository.PaymentTransactionRepository
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.retry.annotation.Retryable;
@@ -36,6 +37,7 @@ public class PaymentCommandService {
     private final WebhookService webhookService;
     private final AccountService accountService;
     private final LedgerService ledgerService;
+    private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
     // 병합 트랜잭션: idempotency PROCESSING insert + PaymentIntent/AUTH TX insert.
@@ -157,6 +159,7 @@ public class PaymentCommandService {
         }
         paymentIntent.markAuthUnknown();
         transaction.markUnknown();
+        eventPublisher.publishEvent(new TransactionUnknown(transaction.getId()));
         return toResponse(paymentIntent);
     }
 
@@ -170,6 +173,7 @@ public class PaymentCommandService {
         }
         paymentIntent.markFdsUnknown();
         transaction.markUnknown();
+        eventPublisher.publishEvent(new TransactionUnknown(transaction.getId()));
         return toResponse(paymentIntent);
     }
 
@@ -273,6 +277,7 @@ public class PaymentCommandService {
         }
         paymentIntent.markApproveUnknown();
         transaction.markUnknown();
+        eventPublisher.publishEvent(new TransactionUnknown(transaction.getId()));
         return toResponse(paymentIntent);
     }
 

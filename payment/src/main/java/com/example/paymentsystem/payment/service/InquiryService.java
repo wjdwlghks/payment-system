@@ -14,14 +14,19 @@ import com.example.paymentsystem.payment.domain.PaymentIntent;
 import com.example.paymentsystem.payment.domain.PaymentIntentStatus;
 import com.example.paymentsystem.payment.domain.PaymentTransaction;
 import com.example.paymentsystem.payment.domain.TransactionStatus;
+import com.example.paymentsystem.payment.dto.InquiryClaim;
 import com.example.paymentsystem.payment.dto.PaymentResponse;
+import com.example.paymentsystem.payment.dto.PendingInquiry;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.stream.Collectors;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.data.domain.Limit;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,45 +49,60 @@ public class InquiryService {
     private final RecoveryCounter recoveryCounter;
 
     /**
-     * 조회할 때가 된 UNKNOWN 한 페이지를 <b>선점해서</b> 돌려준다.
-     * 반환 시점에 이미 다음 조회 시각이 밀려 있으므로, 호출부가 이걸로 뭘 하든(또는 못 하든)
-     * 같은 행이 곧바로 다시 잡히지 않는다.
+     * 조회 한 건을 선점한다. 아직 확정 전(REQUESTED/UNKNOWN)일 때만 값을 돌려주고,
+     * 그때 <b>다음 조회 시각을 먼저 DB에 적는다</b>.
+     *
+     * <p>조회 전에 적는 이유는 이 시점 이후로 무슨 일이 생겨도(프로세스 종료, 예외, 큐 유실)
+     * DB에 합리적인 다음 시각이 남아 sweeper가 이어받을 수 있게 하기 위해서다.
+     * 그리고 큐가 재예약할 간격과 DB에 적힌 시각이 같아, 두 장치가 같은 시각을 본다.
      */
+    @Retryable(retryFor = {ObjectOptimisticLockingFailureException.class, CannotAcquireLockException.class}, maxAttempts = 3)
     @Transactional
-    public List<PaymentTransaction> claimDueUnknowns(int pageSize) {
-        Instant now = Instant.now();
-        return claim(paymentTransactionRepository.findDueUnknown(now, Limit.of(pageSize)), now);
+    public Optional<InquiryClaim> claimForAttempt(Long transactionId) {
+        return paymentTransactionRepository.findWithIntentById(transactionId)
+                .filter(PaymentTransaction::isPendingInquiry)
+                .map(transaction -> {
+                    Duration next = InquiryBackoff.of(transaction.getInquiryAttempts() + 1);
+                    transaction.scheduleNextInquiry(Instant.now().plus(next));
+                    return new InquiryClaim(transaction, next);
+                });
     }
 
-    /** REQUESTED로 방치된 것들. 첫 자격은 updated_at, 이후는 백오프가 정한다. */
-    @Transactional
-    public List<PaymentTransaction> claimDueStaleRequested(int pageSize) {
-        Instant now = Instant.now();
-        List<PaymentTransaction> page = paymentTransactionRepository.findDueStaleRequested(
-                now, now.minus(STALE_REQUESTED_THRESHOLD), Limit.of(pageSize));
-        return claim(page, now);
+    @Transactional(readOnly = true)
+    public boolean isPendingInquiry(Long transactionId) {
+        return paymentTransactionRepository.findById(transactionId)
+                .map(PaymentTransaction::isPendingInquiry)
+                .orElse(false);
     }
 
-    /**
-     * 백오프 단계가 행마다 달라 한 문장으로는 못 민다. 단계별로 묶어서 UPDATE하면
-     * 사다리 칸 수만큼(5~6개)으로 끝나고, 백오프 정책은 Java에 남는다 —
-     * 행마다 UPDATE를 날리면 커밋이 300번이 되고, SQL에 CASE로 넣으면 정책이 이원화된다.
-     */
-    private List<PaymentTransaction> claim(List<PaymentTransaction> page, Instant now) {
-        if (page.isEmpty()) {
-            return page;
+    /** 타입별 조회 분기. 큐 소비자와 sweeper가 공유한다. */
+    public void inquire(PaymentTransaction transaction) {
+        switch (transaction.getType()) {
+            case AUTH -> inquiryAuth(transaction);
+            case FDS -> inquiryFds(transaction);
+            case APPROVE -> inquiryApprove(transaction);
+            case CAPTURE -> inquiryCapture(transaction);
         }
-        page.stream()
-                .collect(Collectors.groupingBy(PaymentTransaction::getInquiryAttempts))
-                .forEach((attempts, txs) -> paymentTransactionRepository.claimForInquiry(
-                        txs.stream().map(PaymentTransaction::getId).toList(),
-                        now.plus(InquiryBackoff.of(attempts + 1)),
-                        now
-                ));
-        return page;
     }
 
-    public void inquiryAuth(PaymentTransaction transaction) {
+    @Transactional(readOnly = true)
+    public List<Long> findOverdueUnknownIds(Duration grace, int limit) {
+        return paymentTransactionRepository.findOverdueUnknownIds(
+                Instant.now().minus(grace), Limit.of(limit));
+    }
+
+    @Transactional(readOnly = true)
+    public List<Long> findStaleRequestedIds(int limit) {
+        return paymentTransactionRepository.findStaleRequestedIds(
+                Instant.now().minus(STALE_REQUESTED_THRESHOLD), Limit.of(limit));
+    }
+
+    @Transactional(readOnly = true)
+    public List<PendingInquiry> findAllPendingInquiries(int limit) {
+        return paymentTransactionRepository.findAllPendingInquiries(Limit.of(limit));
+    }
+
+    private void inquiryAuth(PaymentTransaction transaction) {
         recoveryCounter.incrementInquiryTotal("auth");
         CardCompany company = transaction.getPaymentIntent().getCardCompany();
         String cardRequestRef = transaction.getCardRequestRef();
@@ -95,7 +115,7 @@ public class InquiryService {
         );
     }
 
-    public void inquiryFds(PaymentTransaction transaction) {
+    private void inquiryFds(PaymentTransaction transaction) {
         recoveryCounter.incrementInquiryTotal("fds");
         String cardRequestRef = transaction.getCardRequestRef();
         externalCallExecutor.executeVoid(
@@ -107,7 +127,7 @@ public class InquiryService {
         );
     }
 
-    public void inquiryApprove(PaymentTransaction transaction) {
+    private void inquiryApprove(PaymentTransaction transaction) {
         recoveryCounter.incrementInquiryTotal("approve");
         CardCompany company = transaction.getPaymentIntent().getCardCompany();
         String cardRequestRef = transaction.getCardRequestRef();
@@ -181,7 +201,7 @@ public class InquiryService {
     }
 
     // 매입은 배치라 사용자 멱등키가 없다 — 상태만 확정하면 된다.
-    public void inquiryCapture(PaymentTransaction transaction) {
+    private void inquiryCapture(PaymentTransaction transaction) {
         recoveryCounter.incrementInquiryTotal("capture");
         CardCompany company = transaction.getPaymentIntent().getCardCompany();
         String cardRequestRef = transaction.getCardRequestRef();

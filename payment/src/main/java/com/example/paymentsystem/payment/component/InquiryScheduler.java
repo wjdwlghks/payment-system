@@ -2,81 +2,62 @@ package com.example.paymentsystem.payment.component;
 
 
 import com.example.paymentsystem.payment.domain.IdempotencyKey;
-import com.example.paymentsystem.payment.domain.PaymentTransaction;
-import com.example.paymentsystem.payment.domain.TransactionType;
 import com.example.paymentsystem.payment.service.IdempotentRecoveryService;
 import com.example.paymentsystem.payment.service.InquiryService;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
-import java.util.function.IntFunction;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
-
+/**
+ * 복구 경로의 안전망.
+ *
+ * <p>UNKNOWN 재조회의 정상 경로는 {@link InquiryQueue}다 — UNKNOWN이 확정되면 이벤트로 예약되고
+ * 정확히 그 시각에 깨어난다. 여기 스캔이 남아 있는 이유는 그 큐가 힙에 있기 때문이다.
+ * 프로세스가 죽거나 적재가 실패하면 예약이 사라지는데, {@code next_inquiry_at}은 DB에 남아 있으므로
+ * <b>due를 한참 넘긴 행 = 큐가 잃어버린 행</b>으로 판정해 다시 넣을 수 있다.
+ *
+ * <p>REQUESTED 방치는 사정이 다르다. "요청한 지 오래됐다"를 알려주는 이벤트가 없어서
+ * 스캔 외에는 찾을 방법이 없다. 그래서 그쪽은 여전히 주기 스캔이 정상 경로다.
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class InquiryScheduler {
 
     /**
-     * 한 번의 SELECT/UPDATE로 다룰 행 수. <b>처리율 상한이 아니다</b> — drain 루프가 due가
-     * 빌 때까지 반복해서 가져가므로, 처리율은 예산 × 병렬도가 정한다. 부하가 늘어도
-     * 이 값을 올릴 이유가 없다(메모리와 예산 오버슈트 폭만 정한다).
-     */
-    private static final int PAGE_SIZE = 300;
-
-    /**
-     * 한 틱이 스레드를 쥘 수 있는 벽시계 상한. drain 루프의 정상 종료 조건은 "due 없음"인데,
-     * 부하 중에는 처리하는 속도만큼 새 UNKNOWN이 생겨 루프가 안 끝날 수 있다.
+     * 이만큼 due를 넘긴 건만 "큐가 놓쳤다"고 본다.
      *
-     * <p>페이지 <b>사이</b>에서만 검사하므로 실제 최대는 {@code 예산 + 페이지 1개 최악 소요시간}이다.
-     * 카드사가 멈춰 건당 3초 타임아웃이면 300건/20병렬 = 45초까지 오버슈트한다.
-     * 초과해도 손실은 없다 — 아직 선점하지 않은 행은 여전히 due 상태로 다음 틱이 이어받는다.
+     * <p>짧게 잡으면 큐가 정상적으로 처리하려는 건을 sweeper가 가로채 중복 조회한다.
+     * 소비자가 조회 직전에 다음 시각을 미리 적어두므로, 정상 동작 중이라면 due가 지난 행은
+     * 존재하지 않는다 — 30초는 그 전제가 잠깐 어긋나는 구간에 대한 여유다.
      */
-    private static final Duration TICK_BUDGET = Duration.ofSeconds(5);
+    private static final Duration LOST_GRACE = Duration.ofSeconds(30);
 
-    /**
-     * 대상(카드사 / FDS)별 동시 조회 수. 클라이언트 커넥션 풀의 {@code maxConnPerRoute}(20)에 맞춘다.
-     *
-     * <p>풀보다 크게 잡으면 초과분이 {@code ConnectionRequestTimeout}으로 실패하는데,
-     * 그건 "카드사가 응답을 안 했다"가 아니라 "우리 쪽 커넥션이 없었다"이다. 그런데도 백오프
-     * 사다리는 한 칸 올라가므로, 카드사에 질문조차 못 해본 행이 순전히 로컬 자원 부족 때문에
-     * 캡까지 유배된다. 백오프 신호를 오염시키지 않으려면 풀 안에서 놀아야 한다.
-     *
-     * <p>적응형 리미터({@code CardConcurrencyLimiterRegistry})를 재사용하지 않는 이유는 방향이
-     * 반대이기 때문이다. 그쪽은 카드사가 느려지면 한도를 <b>줄이는데</b>, 느려지는 그 시점이
-     * 바로 UNKNOWN이 가장 많이 쌓여 복구가 가장 필요한 때다.
-     */
-    private static final int PER_TARGET_CONCURRENCY = 20;
+    private static final int SWEEP_LIMIT = 1_000;
 
-    private static final String FDS_TARGET = "FDS";
-
+    private final InquiryQueue inquiryQueue;
     private final InquiryService inquiryService;
     private final IdempotentRecoveryService idempotentRecoveryService;
 
-    private final Map<String, Semaphore> slots = new ConcurrentHashMap<>();
-
-    /**
-     * 주기가 곧 UNKNOWN 복구 지연의 하한이다 — 150 TPS 실측에서 viaUnknown p50 9.2초가
-     * 나왔고 그 대부분이 이 틱을 기다린 시간이었다. 백오프가 들어오기 전에는 주기를 줄이면
-     * 죽은 카드사를 그만큼 더 때렸지만, 이제 해소 불가능한 건은 스스로 물러나므로
-     * 주기를 줄여도 살아 있는 건들만 더 자주 확인하게 된다.
-     */
-    @Scheduled(fixedDelayString = "${payment.inquiry.interval-ms:5000}")
-    public void inquiryUnknownPayment() {
-        drain(inquiryService::claimDueUnknowns, "unknown");
+    /** 큐가 잃어버린 UNKNOWN을 회수한다. 정상 동작 중에는 아무것도 안 잡히는 게 맞다. */
+    @Scheduled(fixedDelayString = "${payment.inquiry.sweep-interval-ms:60000}")
+    public void sweepLostUnknowns() {
+        List<Long> lost = inquiryService.findOverdueUnknownIds(LOST_GRACE, SWEEP_LIMIT);
+        if (lost.isEmpty()) {
+            return;
+        }
+        log.warn("Re-queueing {} UNKNOWN transactions the in-memory queue lost.", lost.size());
+        lost.forEach(id -> inquiryQueue.schedule(id, Duration.ZERO));
     }
 
+    /** 크래시로 REQUESTED에 방치된 건. 이벤트가 없어 스캔이 유일한 발견 수단이다. */
     @Scheduled(fixedDelay = 30_000)
     public void inquiryStaleRequested() {
-        drain(inquiryService::claimDueStaleRequested, "stale-requested");
+        List<Long> stale = inquiryService.findStaleRequestedIds(SWEEP_LIMIT);
+        stale.forEach(id -> inquiryQueue.schedule(id, Duration.ZERO));
     }
 
     @Scheduled(fixedDelay = 30_000)
@@ -89,82 +70,6 @@ public class InquiryScheduler {
             } catch (Exception e) {
                 log.error("Failed to recover idempotency key. id={}", key.getId(), e);
             }
-        }
-    }
-
-    /**
-     * due가 빌 때까지 페이지 단위로 소진한다.
-     *
-     * <p>루프가 반드시 끝나는 이유는 선점(claim)이 가져간 행을 전부 미래로 밀기 때문이다 —
-     * 다음 {@code claim}은 반드시 서로소인 집합을 돌려주므로 단조 전진한다.
-     * 선점이 없으면 같은 300건을 예산이 탈 때까지 반복 조회하며 진행이 0이 된다.
-     */
-    private void drain(IntFunction<List<PaymentTransaction>> claimer, String label) {
-        Instant deadline = Instant.now().plus(TICK_BUDGET);
-        int pages = 0;
-        while (Instant.now().isBefore(deadline)) {
-            List<PaymentTransaction> page;
-            try {
-                page = claimer.apply(PAGE_SIZE);
-            } catch (Exception e) {
-                log.error("Failed to claim inquiry page. kind={}", label, e);
-                return;
-            }
-            if (page.isEmpty()) {
-                return;
-            }
-            pages++;
-            inquireConcurrently(page);
-        }
-        log.info("Inquiry drain hit the time budget. kind={} pages={}", label, pages);
-    }
-
-    /**
-     * 대상별로 동시 진행 수를 제한해 함께 발사한다.
-     *
-     * <p>순차 루프였을 때는 멈춘 카드사 하나가 배치 전체를 붙잡았다 —
-     * 300건 × 3초 타임아웃이면 한 틱이 15분이고, 그 뒤에 섞인 건강한 카드사의 결제도 같이 밀렸다.
-     * 대상별 세마포어로 나누면 느린 쪽은 자기 20칸 안에서만 밀리고 나머지는 즉시 끝난다.
-     */
-    private void inquireConcurrently(List<PaymentTransaction> page) {
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            for (PaymentTransaction transaction : page) {
-                executor.execute(() -> inquireWithSlot(transaction));
-            }
-        }
-        // executor.close() — 페이지의 모든 조회가 끝날 때까지 대기
-    }
-
-    private void inquireWithSlot(PaymentTransaction transaction) {
-        Semaphore slot = slots.computeIfAbsent(
-                targetOf(transaction), k -> new Semaphore(PER_TARGET_CONCURRENCY));
-        slot.acquireUninterruptibly();
-        try {
-            inquire(transaction);
-        } finally {
-            slot.release();
-        }
-    }
-
-    /** FDS는 카드사와 별개 서비스라 커넥션 풀도 따로다 — 한도도 따로 센다. */
-    private String targetOf(PaymentTransaction transaction) {
-        if (transaction.getType() == TransactionType.FDS) {
-            return FDS_TARGET;
-        }
-        return transaction.getPaymentIntent().getCardCompany().name();
-    }
-
-    private void inquire(PaymentTransaction transaction) {
-        try {
-            switch (transaction.getType()) {
-                case AUTH -> inquiryService.inquiryAuth(transaction);
-                case FDS -> inquiryService.inquiryFds(transaction);
-                case APPROVE -> inquiryService.inquiryApprove(transaction);
-                case CAPTURE -> inquiryService.inquiryCapture(transaction);
-            }
-        } catch (Exception e) {
-            log.error("Failed to inquire stuck transaction. transactionId={} status={}",
-                    transaction.getId(), transaction.getStatus(), e);
         }
     }
 }

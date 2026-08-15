@@ -103,6 +103,9 @@ LATENCY=$(curl -sf "$MERCHANT_URL/admin/latency")
 CONVERGENCE=$(curl -sf "$PAYMENT_URL/admin/convergence")
 PG_INTERNAL=$(curl -sf "$PAYMENT_URL/admin/verify/pg-internal")
 RECOVERY=$(curl -sf "$PAYMENT_URL/admin/metrics/recovery")
+# 누적 카운터라 부하가 끝난 뒤 한 번 읽으면 된다.
+# 사전거절 = 카드사에 나가지도 못하고 로컬 리미터가 떨어뜨린 건수.
+LIMITER=$(curl -sf "$PAYMENT_URL/admin/concurrency-limits")
 
 python3 - <<EOF > "$RESULT_FILE"
 import json
@@ -134,6 +137,8 @@ print(json.dumps({
     "throughput":  throughput,
     "latency":     latency,
     "concurrencyLimits": limit_summary,
+    "limiterFinal": json.loads('''$LIMITER'''),
+    "minLimitSetting": "${CARD_LIMITER_MIN_LIMIT:-1}",
     "convergence": json.loads('''$CONVERGENCE'''),
     "pgInternal":  json.loads('''$PG_INTERNAL'''),
     "recovery":    json.loads('''$RECOVERY'''),
@@ -148,3 +153,5 @@ log "판독 순서:"
 log "  1) latency.inFlight == 0 이어야 한다. 아니면 가장 느린 건들이 분포에서 빠진 것."
 log "  2) latency.workerQueueDepth 가 0 근처여야 한다. 쌓였으면 merchant가 병목이라 그 런은 버린다."
 log "  3) 그 다음에 userLatency.normal(대조군) vs userLatency.viaUnknown(UNKNOWN 경유)를 비교한다."
+log ""
+log "실패 원인 판별: limiterFinal.preRejected 합계를 pgInternal 의 AUTH_FAILED 와 비교한다."

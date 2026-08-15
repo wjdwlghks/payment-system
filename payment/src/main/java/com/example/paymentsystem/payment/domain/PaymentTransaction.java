@@ -115,4 +115,18 @@ public class PaymentTransaction {
         this.status = TransactionStatus.UNKNOWN;
         this.nextInquiryAt = Instant.now();
     }
+
+    /**
+     * 다음 조회 예약을 DB에 남긴다. 실제 예약은 인메모리 큐가 들고 있지만, 그 큐는 프로세스가
+     * 죽으면 사라지므로 <b>여기 적힌 값이 유일한 durable 기록</b>이다. sweeper가 "큐가 놓쳤다"를
+     * 판정하는 기준이자, 재기동 시 남은 지연을 그대로 복원하는 근거가 된다.
+     */
+    public void scheduleNextInquiry(Instant nextInquiryAt) {
+        this.inquiryAttempts = this.inquiryAttempts + 1;
+        this.nextInquiryAt = nextInquiryAt;
+    }
+
+    public boolean isPendingInquiry() {
+        return this.status == TransactionStatus.REQUESTED || this.status == TransactionStatus.UNKNOWN;
+    }
 }

@@ -9,6 +9,7 @@ import com.example.paymentsystem.payment.repository.IdempotencyKeyRepository;
 import com.example.paymentsystem.payment.repository.PaymentIntentRepository;
 import com.example.paymentsystem.payment.repository.PaymentTransactionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.retry.annotation.Retryable;
@@ -32,6 +33,7 @@ public class CaptureCommandService {
     private final IdempotentService idempotentService;
     private final LedgerService ledgerService;
     private final WebhookService webhookService;
+    private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
     // 병합 트랜잭션: 멱등키 PROCESSING insert + CAPTURE TX insert.
@@ -108,6 +110,7 @@ public class CaptureCommandService {
         PaymentTransaction transaction = getTransaction(captureTransactionId);
         if (transaction.getStatus() == TransactionStatus.REQUESTED) {
             transaction.markUnknown();
+            eventPublisher.publishEvent(new TransactionUnknown(transaction.getId()));
         }
         return toApiResult(transaction);
     }

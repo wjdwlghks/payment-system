@@ -41,7 +41,7 @@ const JSON_HDR  = { headers: { 'Content-Type': 'application/json' } };
 // FailureRegistry.consumeByAlias가 한 alias의 룰들을 전부 순회하며 각자 독립적으로 판정하고
 // 통과한 것 중 첫 번째를 적용하기 때문이다. 지점마다 룰이 4개(서버 3종 + 클라이언트 CONNECT_FAILURE)
 // 걸리므로 실효 장애율 ≈ 1 - (1-PROB)^4. PROB=0.027이면 지점당 약 10.4%.
-const PROB      = parseFloat(__ENV.PROB) || 0.027;
+const PROB      = __ENV.PROB !== undefined ? parseFloat(__ENV.PROB) : 0.027;
 const REMAINING = parseInt(__ENV.REMAINING) || 10_000_000;
 
 // 매입 장애는 기본으로 끈다. 사용자 지연은 승인까지라 매입 장애가 측정값에 안 들어오고,
@@ -86,6 +86,11 @@ export const options = {
 export function setup() {
   // 이전 런의 표본이 섞이지 않도록 가맹점 계측을 비운다
   http.post(`${MERCHANT}/admin/latency/reset`);
+
+  if (PROB <= 0) {
+    console.log('[setup] PROB=0 — 장애 주입 없음 (baseline)');
+    return;
+  }
 
   [CARD_A, CARD_B].forEach(card => {
     injectServerFailures(card, 'auth');

@@ -1,5 +1,6 @@
 package com.example.paymentsystem.payment.controller;
 
+import com.example.paymentsystem.payment.component.InquiryQueue;
 import com.example.paymentsystem.payment.domain.IdempotentStatus;
 import com.example.paymentsystem.payment.domain.PaymentIntentStatus;
 import com.example.paymentsystem.payment.domain.TransactionStatus;
@@ -27,6 +28,7 @@ public class ConvergenceController {
     private final PaymentIntentRepository intentRepository;
     private final WebhookOutboxRepository outboxRepository;
     private final IdempotencyKeyRepository idempotencyKeyRepository;
+    private final InquiryQueue inquiryQueue;
 
     @GetMapping
     public ConvergenceStatus get() {
@@ -39,6 +41,9 @@ public class ConvergenceController {
         long fdsPassed           = intentRepository.countByStatus(PaymentIntentStatus.FDS_PASSED);
         long pendingWebhook     = outboxRepository.countByStatus(WebhookOutboxStatus.PENDING);
         long processingIdempotencyKeys = idempotencyKeyRepository.countByStatus(IdempotentStatus.PROCESSING);
+        // 큐가 들고 있는 예약 수. unknownTx 보다 작으면 인메모리 큐가 일부를 잃었다는 뜻이고,
+        // 그 차이는 sweeper가 메운다. 판정에는 쓰지 않고 진단용으로만 노출한다.
+        int queuedInquiries     = inquiryQueue.trackedCount();
 
         // pendingWebhook을 판정에 넣는다. 빼면 "UNKNOWN은 다 풀렸는데 그 사실을 가맹점에
         // 알리는 통로가 수천 건 막혀 있는" 상태를 converged=true로 보고하게 된다 —
@@ -48,7 +53,8 @@ public class ConvergenceController {
                 && pendingWebhook == 0;
 
         return new ConvergenceStatus(
-                unknownTx, staleRequested, authenticated, fdsPassed, pendingWebhook, processingIdempotencyKeys, converged);
+                unknownTx, staleRequested, authenticated, fdsPassed, pendingWebhook,
+                processingIdempotencyKeys, queuedInquiries, converged);
     }
 
     public record ConvergenceStatus(
@@ -58,6 +64,7 @@ public class ConvergenceController {
             long fdsPassed,
             long pendingWebhook,
             long processingIdempotencyKeys,
+            int queuedInquiries,
             boolean converged
     ) {}
 }

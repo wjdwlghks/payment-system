@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 public class CardConcurrencyLimiterRegistry {
@@ -20,6 +21,16 @@ public class CardConcurrencyLimiterRegistry {
 
     private final Map<CardCompany, SimpleLimiter<Void>> limiters = new EnumMap<>(CardCompany.class);
     private final Map<CardCompany, Gradient2Limit> limits = new EnumMap<>(CardCompany.class);
+
+    /**
+     * 사전거절 누적 수. 카드사에 요청이 나가지도 못하고 로컬에서 떨어진 건수다.
+     *
+     * <p>이게 필요한 이유: 사전거절은 {@code ExternalCallExecutor}에서 <b>확정 실패</b>로 분류돼
+     * 곧바로 AUTH_FAILED가 된다(요청이 안 나갔으니 UNKNOWN이 아니라는 판단은 옳다).
+     * 그런데 결과만 보면 카드사가 거절한 것과 구분이 안 돼서, 실패율이 높을 때
+     * 원인이 카드사인지 우리 리미터인지 사후에 알 수가 없다.
+     */
+    private final Map<CardCompany, AtomicLong> preRejections = new EnumMap<>(CardCompany.class);
 
     @PostConstruct
     public void init() {
@@ -32,6 +43,7 @@ public class CardConcurrencyLimiterRegistry {
                     .build();
 
             limits.put(company, limit);
+            preRejections.put(company, new AtomicLong());
             limiters.put(company, SimpleLimiter.<Void>newBuilder()
                     .limit(limit)
                     .build());
@@ -39,7 +51,19 @@ public class CardConcurrencyLimiterRegistry {
     }
 
     public Optional<Limiter.Listener> acquire(CardCompany company) {
-        return limiters.get(company).acquire(null);
+        Optional<Limiter.Listener> token = limiters.get(company).acquire(null);
+        if (token.isEmpty()) {
+            preRejections.get(company).incrementAndGet();
+        }
+        return token;
+    }
+
+    public long getPreRejections(CardCompany company) {
+        return preRejections.get(company).get();
+    }
+
+    public void resetPreRejections() {
+        preRejections.values().forEach(counter -> counter.set(0));
     }
 
     public int getCurrentLimit(CardCompany company) {
