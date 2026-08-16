@@ -159,4 +159,58 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     )
     """)
     long countApprovedWithoutCapture();
+
+    /**
+     * 단계 × 최종상태 × 복구경로 3중 집계. 한 단계의 "총 몇 건 중 몇 건이 바로 성공했고
+     * 몇 건이 UNKNOWN을 거쳐 확정됐는가"가 여기서 나온다.
+     *
+     * <p>native로 쓰는 이유는 {@code was_unknown}이 JPQL에서 그룹핑 키로 쓰기엔 어색하고,
+     * 세 축을 한 번에 훑는 게 단계마다 쿼리를 나누는 것보다 정확하기 때문이다 —
+     * 나누면 집계 사이에 부하가 진행돼 합이 안 맞는다.
+     *
+     * <p>반환 컬럼: [0] type, [1] status, [2] viaInquiry(0/1), [3] count.
+     * BOOLEAN을 0/1로 캐스팅해 돌려주는 것은 드라이버마다 Boolean/Byte/Integer로 갈리는 걸 막으려는 것이다.
+     */
+    @Query(value = """
+    SELECT t.type                                    AS stage,
+           t.status                                  AS status,
+           CASE WHEN t.was_unknown THEN 1 ELSE 0 END AS via_inquiry,
+           COUNT(*)                                  AS cnt
+      FROM `transaction` t
+     GROUP BY t.type, t.status, via_inquiry
+    """, nativeQuery = true)
+    List<Object[]> aggregateStageOutcomes();
+
+    /**
+     * 각 단계로 <b>들어온 경로</b>. 직전 단계가 동기로 바로 성공해서 넘어온 건과,
+     * 직전 단계가 UNKNOWN이었다가 조회로 성공 확정된 뒤 넘어온 건을 가른다.
+     *
+     * <p>직전 단계를 {@code status='SUCCEEDED'}로 못 박는 이유는 두 가지다. 하나는 의미상
+     * 이 단계가 존재하는 근거가 직전 단계의 <b>성공</b>이라는 것이고, 다른 하나는 한 결제에
+     * 같은 타입 행이 둘 이상 생길 수 있는 경로(FDS 인라인 호출과 FdsScheduler의 경합)에서
+     * 조인이 뻥튀기되는 걸 막기 위해서다.
+     *
+     * <p>LEFT JOIN을 쓰는 것은 매칭되는 직전 성공이 없는 행을 고아로 드러내기 위해서다.
+     * 그 수는 항상 0이어야 하며, 0이 아니면 유입 분해 자체가 아니라 불변식이 깨진 것이다.
+     *
+     * <p>반환 컬럼: [0] type, [1] prevViaInquiry(0/1, 고아면 NULL), [2] count.
+     */
+    @Query(value = """
+    SELECT cur.type                                        AS stage,
+           CASE WHEN prev.id IS NULL THEN NULL
+                WHEN prev.was_unknown THEN 1 ELSE 0 END    AS prev_via_inquiry,
+           COUNT(*)                                        AS cnt
+      FROM `transaction` cur
+      LEFT JOIN `transaction` prev
+             ON prev.payment_intent_id = cur.payment_intent_id
+            AND prev.status = 'SUCCEEDED'
+            AND prev.type = CASE cur.type
+                              WHEN 'FDS'     THEN 'AUTH'
+                              WHEN 'APPROVE' THEN 'FDS'
+                              WHEN 'CAPTURE' THEN 'APPROVE'
+                            END
+     WHERE cur.type IN ('FDS', 'APPROVE', 'CAPTURE')
+     GROUP BY cur.type, prev_via_inquiry
+    """, nativeQuery = true)
+    List<Object[]> aggregateStageEntryPaths();
 }

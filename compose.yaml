@@ -33,11 +33,16 @@ services:
       FDS_BASE_URL: http://fds:8080
       MERCHANT_BASE_URL: http://merchant:8080
       # 격리 A/B 측정용. 기본값이 정상 설정이고, 크게 주면 Resilience4j가 사실상 꺼진다.
-      CARD_BULKHEAD_MAX: ${CARD_BULKHEAD_MAX:-48}
+      CARD_BULKHEAD_MAX: ${CARD_BULKHEAD_MAX:-80}
       CARD_CB_FAILURE_RATE: ${CARD_CB_FAILURE_RATE:-50}
       CARD_CB_SLOW_RATE: ${CARD_CB_SLOW_RATE:-50}
       CARD_CB_SLOW_DURATION: ${CARD_CB_SLOW_DURATION:-1s}
       CARD_CB_MIN_CALLS: ${CARD_CB_MIN_CALLS:-100}
+      # 커넥션 풀은 Bulkhead 퍼밋보다 항상 위여야 한다 — 퍼밋을 올리면 여기도 올린다.
+      CARD_MAX_CONN_PER_ROUTE: ${CARD_MAX_CONN_PER_ROUTE:-128}
+      CARD_MAX_CONN_TOTAL: ${CARD_MAX_CONN_TOTAL:-256}
+      # true = 카드사들이 풀 하나를 공유(격리 없음). 전파 관측용.
+      CARD_SHARED_POOL: ${CARD_SHARED_POOL:-false}
       # FDS_PASSED 만료. 검증할 때는 짧게 줄여서 돌린다 (기본 15분 / 60초 스캔).
       EXPIRY_FDS_PASSED_TTL_MS: ${EXPIRY_FDS_PASSED_TTL_MS:-900000}
       EXPIRY_SCAN_INTERVAL_MS: ${EXPIRY_SCAN_INTERVAL_MS:-60000}

@@ -63,14 +63,14 @@ public class PayoutService {
         return PayoutResponse.created(payout);
     }
 
+    /**
+     * 코드는 {@code PAY-yyyyMMdd-001} 꼴이다. 패딩은 세 자리지만 1,000번째부터는 네 자리가 되고,
+     * 그래도 되는 이유는 다음 번호를 {@link PayoutRepository#findMaxSequenceByPrefix}가
+     * <b>수로</b> 뽑기 때문이다. 문자열 정렬로 뽑으면 그 자리에서 번호가 멈춘다.
+     */
     private String generatePayoutCode() {
         String prefix = "PAY-" + LocalDate.now(PAYOUT_CODE_ZONE).format(PAYOUT_CODE_DATE_FORMATTER) + "-";
-        int nextSequence = payoutRepository
-                .findTop1ByPayoutCodeStartingWithOrderByPayoutCodeDesc(prefix)
-                .map(Payout::getPayoutCode)
-                .map(payoutCode -> payoutCode.substring(prefix.length()))
-                .map(Integer::parseInt)
-                .orElse(0) + 1;
+        long nextSequence = payoutRepository.findMaxSequenceByPrefix(prefix) + 1;
 
         return prefix + String.format("%03d", nextSequence);
     }

@@ -39,7 +39,12 @@ resilience4j:
         # 여기서 즉시 거절되고, 풀에서 500ms를 버린 뒤 ConnectionRequestTimeout이 나는 일이
         # 구조적으로 사라진다. 풀은 "여기서 막히면 안 되는" 물리적 상한으로만 남는다.
         # 환경변수로 뺀 이유는 격리 A/B 측정 때문이다. 아주 크게 주면 사실상 꺼진다.
-        maxConcurrentCalls: ${CARD_BULKHEAD_MAX:48}
+        # 48은 건강한 카드사의 피크 동시성(실측 48~64) 한가운데라 멀쩡한 결제를 죽였다:
+        # 단일 카드사 150 TPS에서 3,608건이 BulkheadFullException으로 확정 실패했고
+        # 완주율이 72.2% -> 55.8%로 떨어졌다(이론 상한 72.0%).
+        # 80은 그 위여서 건강할 때 거절이 2건(0.01%)뿐이고, 아픈 카드사는 그대로 막는다.
+        # 커넥션 풀(route당 128)보다는 여전히 낮게 유지해야 한다.
+        maxConcurrentCalls: ${CARD_BULKHEAD_MAX:80}
         # 대기 금지. 퍼밋을 기다리면 지키려던 그 Tomcat 스레드를 그대로 붙잡고 있게 된다.
         maxWaitDuration: 0
   circuitbreaker:
@@ -81,6 +86,14 @@ payment:
   card:
     card-a-base-url: ${CARD_A_BASE_URL:http://card:8080}
     card-b-base-url: ${CARD_B_BASE_URL:http://card-b:8080}
+    # 카드사 한 곳당 커넥션 상한. Bulkhead 퍼밋보다 반드시 커야 한다
+    # (이유는 CardClientConfig 주석 참고). 퍼밋을 올리는 A/B 측정에서 함께 올린다.
+    max-conn-per-route: ${CARD_MAX_CONN_PER_ROUTE:128}
+    max-conn-total: ${CARD_MAX_CONN_TOTAL:256}
+    # true면 카드사들이 커넥션 풀 하나를 공유하고 per-route 상한도 사라진다 —
+    # 한 카드사가 풀을 통째로 삼킬 수 있는 상태, 즉 **격리 이전의 모습**이다.
+    # 장애 전파를 관측하기 위한 측정 전용 스위치이며 운영 기본값은 false다.
+    shared-pool: ${CARD_SHARED_POOL:false}
   fds:
     base-url: ${FDS_BASE_URL:http://fds:8080}
   webhook:

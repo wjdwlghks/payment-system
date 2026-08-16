@@ -58,7 +58,8 @@ if [[ -z "$BUSINESS_DATE" ]]; then
   fi
 fi
 
-RESULT_FILE="$RESULTS_DIR/$(date +%Y%m%d_%H%M%S)_settlement_verify_${BUSINESS_DATE}.json"
+# 상위 스크립트(run-consistency-proof.sh)가 결과를 합칠 수 있도록 경로를 넘겨받을 수 있게 한다.
+RESULT_FILE=${SETTLEMENT_RESULT_FILE:-"$RESULTS_DIR/$(date +%Y%m%d_%H%M%S)_settlement_verify_${BUSINESS_DATE}.json"}
 
 # ── 0. 선행조건 — UNKNOWN이 남아 있으면 대사가 미확정 거래를 대상으로 삼는다 ──
 log "=== 0. Preflight ==="

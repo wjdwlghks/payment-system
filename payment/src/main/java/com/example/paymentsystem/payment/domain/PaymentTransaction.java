@@ -62,6 +62,16 @@ public class PaymentTransaction {
     @Column(name = "inquiry_attempts", nullable = false)
     private Integer inquiryAttempts;
 
+    /**
+     * UNKNOWN을 한 번이라도 거쳤는가. <b>한 번 참이 되면 되돌리지 않는다.</b>
+     *
+     * <p>확정되고 나면 status는 SUCCEEDED/FAIL 둘 중 하나로, 동기 호출 한 번에 성공한 건과
+     * UNKNOWN → 조회로 확정된 건이 완전히 같은 모습이 된다. 그 둘을 가르는 유일한 흔적이라
+     * 단계별 유입 경로 집계({@code /admin/metrics/funnel})의 기준이 된다.
+     */
+    @Column(name = "was_unknown", nullable = false)
+    private boolean wasUnknown;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -79,6 +89,7 @@ public class PaymentTransaction {
         this.status = TransactionStatus.REQUESTED;
         this.cardRequestRef = "pg-" + UUID.randomUUID();
         this.inquiryAttempts = 0;
+        this.wasUnknown = false;
     }
 
     @PrePersist
@@ -114,6 +125,7 @@ public class PaymentTransaction {
     public void markUnknown() {
         this.status = TransactionStatus.UNKNOWN;
         this.nextInquiryAt = Instant.now();
+        this.wasUnknown = true;
     }
 
     /**
