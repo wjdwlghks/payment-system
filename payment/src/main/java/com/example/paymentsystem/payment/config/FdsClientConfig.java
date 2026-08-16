@@ -23,10 +23,13 @@ public class FdsClientConfig {
 
     @Bean
     public RestClient fdsRestClient(@Value("${payment.fds.base-url}") String fdsBaseUrl) {
+        // FDS는 라우트가 하나뿐이라 전 트래픽이 이 한도 하나를 통과한다.
+        // 150 TPS 실측에서 122 calls/s, 평균 RTT 175ms(주입 타임아웃 포함) → 필요치 약 21개.
+        // 20이었으니 정확히 걸쳐 있었고, 카드사 풀과 같은 이유로 말랐다.
         PoolingHttpClientConnectionManager connectionManager =
                 PoolingHttpClientConnectionManagerBuilder.create()
-                        .setMaxConnTotal(50)
-                        .setMaxConnPerRoute(20)
+                        .setMaxConnTotal(128)
+                        .setMaxConnPerRoute(64)
                         .setDefaultConnectionConfig(ConnectionConfig.custom()
                                 .setConnectTimeout(Timeout.ofMilliseconds(1_000))
                                 .setSocketTimeout(Timeout.ofMilliseconds(3_000))

@@ -46,16 +46,7 @@ until curl -sf "$MERCHANT_URL/admin/latency" >/dev/null 2>&1; do sleep 3; done
 log "Services ready."
 
 # ── 2. 부하 ────────────────────────────────────────────────────────────────
-# 카드사 적응형 한도를 부하 중에 표본화한다. 실패율이 높을 때 그게 카드사 장애 때문인지
-# 리미터 사전거절 때문인지는 사후에 구분할 수 없어서, 도는 동안 찍어둬야 한다.
 K6_SUMMARY=$(mktemp)
-LIMIT_SAMPLES=$(mktemp)
-( while true; do
-    curl -sf "$PAYMENT_URL/admin/concurrency-limits" >> "$LIMIT_SAMPLES" 2>/dev/null && echo >> "$LIMIT_SAMPLES"
-    sleep 5
-  done ) &
-SAMPLER_PID=$!
-trap 'kill $SAMPLER_PID 2>/dev/null || true' EXIT
 
 log "=== 2. Run k6 latency load (tps=$TPS duration=$DURATION prob=$PROB) ==="
 k6 run \
@@ -64,8 +55,6 @@ k6 run \
   -e TPS="$TPS" -e DURATION="$DURATION" -e PROB="$PROB" \
   -e SUMMARY_OUT="$K6_SUMMARY" \
   "$K6_SCRIPT"
-
-kill $SAMPLER_PID 2>/dev/null || true
 
 log "=== 3. Ensure failure rules cleared ==="
 for url in "$PAYMENT_URL" "$CARD_A_URL" "$CARD_B_URL" "$FDS_URL"; do
@@ -103,9 +92,6 @@ LATENCY=$(curl -sf "$MERCHANT_URL/admin/latency")
 CONVERGENCE=$(curl -sf "$PAYMENT_URL/admin/convergence")
 PG_INTERNAL=$(curl -sf "$PAYMENT_URL/admin/verify/pg-internal")
 RECOVERY=$(curl -sf "$PAYMENT_URL/admin/metrics/recovery")
-# 누적 카운터라 부하가 끝난 뒤 한 번 읽으면 된다.
-# 사전거절 = 카드사에 나가지도 못하고 로컬 리미터가 떨어뜨린 건수.
-LIMITER=$(curl -sf "$PAYMENT_URL/admin/concurrency-limits")
 
 python3 - <<EOF > "$RESULT_FILE"
 import json
@@ -120,25 +106,10 @@ duration = throughput.get("durationSec") or 1
 throughput["completedRps"] = round(latency["completed"] / duration, 1)
 throughput["failedRps"] = round(latency["failed"] / duration, 1)
 
-limits = []
-with open("$LIMIT_SAMPLES") as f:
-    for line in f:
-        line = line.strip()
-        if line.startswith("{"):
-            limits.append(json.loads(line))
-limit_summary = {}
-for company in ("CARD_CORP_A", "CARD_CORP_B"):
-    vals = [s[company] for s in limits if company in s]
-    if vals:
-        limit_summary[company] = {"min": min(vals), "max": max(vals), "last": vals[-1]}
-
 print(json.dumps({
     "params":      {"prob": "$PROB", "tps": "$TPS", "duration": "$DURATION"},
     "throughput":  throughput,
     "latency":     latency,
-    "concurrencyLimits": limit_summary,
-    "limiterFinal": json.loads('''$LIMITER'''),
-    "minLimitSetting": "${CARD_LIMITER_MIN_LIMIT:-1}",
     "convergence": json.loads('''$CONVERGENCE'''),
     "pgInternal":  json.loads('''$PG_INTERNAL'''),
     "recovery":    json.loads('''$RECOVERY'''),
@@ -154,4 +125,5 @@ log "  1) latency.inFlight == 0 이어야 한다. 아니면 가장 느린 건들
 log "  2) latency.workerQueueDepth 가 0 근처여야 한다. 쌓였으면 merchant가 병목이라 그 런은 버린다."
 log "  3) 그 다음에 userLatency.normal(대조군) vs userLatency.viaUnknown(UNKNOWN 경유)를 비교한다."
 log ""
-log "실패 원인 판별: limiterFinal.preRejected 합계를 pgInternal 의 AUTH_FAILED 와 비교한다."
+log "실패 원인 판별: payment 로그의 'unresolved -> UNKNOWN. cause=' 를 예외 클래스별로 집계한다."
+log "  docker compose logs payment | grep -o 'cause=.*' | sort | uniq -c | sort -rn"

@@ -44,7 +44,6 @@ subprojects {
 project(':payment') {
     dependencies {
         implementation project(':failure')
-        implementation 'com.netflix.concurrency-limits:concurrency-limits-core:0.5.3'
         implementation 'org.springframework.boot:spring-boot-starter-data-jpa:4.0.5'
         implementation 'org.springframework.boot:spring-boot-starter-flyway:4.0.5'
         implementation 'io.github.resilience4j:resilience4j-spring-boot4:2.4.0'

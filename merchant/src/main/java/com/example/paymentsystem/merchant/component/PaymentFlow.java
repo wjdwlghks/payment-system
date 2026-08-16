@@ -181,6 +181,23 @@ public class PaymentFlow {
         if (orderId == null) {
             return;
         }
+
+        // 내가 시작한 결제에만 반응한다.
+        //
+        // payment를 직접 때리는 부하 스크립트(k6/payment_sync_latency.js, card_isolation.js 등)가
+        // 돌면 merchant는 자기가 만들지도 않은 결제의 웹훅을 받는다. 그때 approve를 걸면
+        // 스크립트의 승인 호출과 겹쳐 **진짜 동시 중복 요청**이 되고, payment의 멱등키가 그걸
+        // 걸러 409 "Processing approve"를 돌려준다 — 정합성은 지켜지지만 스크립트는 그걸
+        // 실패로 집계해 측정이 오염된다(실측 6%).
+        //
+        // 매입 쪽은 onApproved가 recorder.completeApproved()로 이미 막혀 있었다. 승인만 뚫려
+        // 있었던 이유는 그 가드가 approveInitiated Set이라 "내가 두 번 걸었나"만 볼 뿐
+        // "내가 시작한 결제인가"를 묻지 않았기 때문이다. 그 판정을 여기로 올려 통일한다.
+        if (!recorder.tracks(orderId)) {
+            recorder.recordOrphanWebhook();
+            return;
+        }
+
         switch (request.eventType()) {
             case "ready"    -> approve(orderId, paymentKey);
             case "done"     -> onApproved(orderId, paymentKey);

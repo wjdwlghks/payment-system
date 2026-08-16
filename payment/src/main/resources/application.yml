@@ -29,6 +29,54 @@ spring:
           batch_size: 500
         order_inserts: true
 
+# 카드사별 장애 격리. 인스턴스는 CardCompany 이름으로 런타임에 만들어지고
+# (CardClient가 레지스트리에서 직접 꺼낸다) 여기 default 설정을 물려받는다.
+resilience4j:
+  bulkhead:
+    configs:
+      default:
+        # 커넥션 풀(maxConnPerRoute 64)보다 반드시 낮아야 한다. 그래야 초과분이 전부
+        # 여기서 즉시 거절되고, 풀에서 500ms를 버린 뒤 ConnectionRequestTimeout이 나는 일이
+        # 구조적으로 사라진다. 풀은 "여기서 막히면 안 되는" 물리적 상한으로만 남는다.
+        # 환경변수로 뺀 이유는 격리 A/B 측정 때문이다. 아주 크게 주면 사실상 꺼진다.
+        maxConcurrentCalls: ${CARD_BULKHEAD_MAX:48}
+        # 대기 금지. 퍼밋을 기다리면 지키려던 그 Tomcat 스레드를 그대로 붙잡고 있게 된다.
+        maxWaitDuration: 0
+  circuitbreaker:
+    configs:
+      default:
+        # 초당 100건 넘게 도는 대상이라 "최근 N초"로 세는 게 의미에 맞다.
+        slidingWindowType: TIME_BASED
+        slidingWindowSize: 10
+        # 20은 너무 예민하다 — 회사당 100 calls/s면 0.2초치 표본이라, 기동 직후 버스트처럼
+        # "성공이 아직 하나도 안 돌아온" 순간에 실패율이 진짜 100%가 되어 서킷이 열린다.
+        # 100이면 약 1초치라 여전히 빠르게 반응하면서 그 함정을 피한다.
+        # (아주 크게 주면 창이 절대 안 차서 서킷이 사실상 꺼진다 — 격리 A/B 측정용)
+        minimumNumberOfCalls: ${CARD_CB_MIN_CALLS:100}
+        # 카오스 테스트의 단계당 장애율(10.4%)과 충분히 떨어뜨린다. 그 근처로 잡으면
+        # 양쪽 카드사가 동시에 차단되면서 부하가 통째로 죽는다.
+        # 100으로 주면 "전부 실패해야 열림" = 사실상 꺼짐 (격리 A/B 측정용).
+        failureRateThreshold: ${CARD_CB_FAILURE_RATE:50}
+        # 느린 호출 감지가 실패율보다 중요하다. SLOW_SUCCESS로 느려진 카드사는 실패를
+        # 내지 않고 성공하면서 스레드만 먹으므로, 실패율만 보면 영영 안 열린다.
+        # 정상 20ms / 소켓 타임아웃 3s 사이에 문턱을 둔다.
+        # 소켓 타임아웃(3s)보다 크게 주면 어떤 호출도 "느림"으로 안 잡혀 이 판정이 꺼진다.
+        # 비율만 100으로 올리는 건 비활성화가 아니다 — 전부 느린 상황에서는 그대로 열린다.
+        slowCallDurationThreshold: ${CARD_CB_SLOW_DURATION:1s}
+        slowCallRateThreshold: ${CARD_CB_SLOW_RATE:50}
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 10
+        # 트래픽이 없어도 스스로 half-open으로 넘어가 회복을 탐침한다.
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        recordExceptions:
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
+        # 4xx는 카드사가 건강하게 거절한 것이다. 이걸 실패로 세면 거절이 많은 가맹점 하나가
+        # 서킷을 열어 정상 결제까지 막는다.
+        ignoreExceptions:
+          - org.springframework.web.client.HttpClientErrorException
+          - io.github.resilience4j.bulkhead.BulkheadFullException
+
 payment:
   card:
     card-a-base-url: ${CARD_A_BASE_URL:http://card:8080}

@@ -58,6 +58,22 @@ public class LatencyRecorder {
         }
     }
 
+    /**
+     * merchant가 시작한 흐름인가.
+     *
+     * <p>웹훅 핸들러가 남의 결제까지 몰고 가지 않게 하는 판정이다. payment를 직접 때리는
+     * 부하 스크립트가 돌면 merchant는 자기가 만들지도 않은 결제의 웹훅을 받게 되는데,
+     * 그때 승인·매입을 걸면 스크립트의 호출과 겹쳐 진짜 동시 중복 요청이 된다.
+     */
+    public boolean tracks(String orderId) {
+        return orderId != null && flows.containsKey(orderId);
+    }
+
+    /** 시작 기록이 없는 orderId로 웹훅이 온 경우. */
+    public void recordOrphanWebhook() {
+        orphanWebhooks.incrementAndGet();
+    }
+
     /** 승인이 UNKNOWN으로 끝났을 때처럼, 시작 이후에 UNKNOWN을 만난 경우. */
     public void markUnknown(String orderId) {
         Flow flow = flows.get(orderId);

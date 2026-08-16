@@ -32,7 +32,12 @@ services:
       CARD_B_BASE_URL: http://card-b:8080
       FDS_BASE_URL: http://fds:8080
       MERCHANT_BASE_URL: http://merchant:8080
-      CARD_LIMITER_MIN_LIMIT: ${CARD_LIMITER_MIN_LIMIT:-1}
+      # 격리 A/B 측정용. 기본값이 정상 설정이고, 크게 주면 Resilience4j가 사실상 꺼진다.
+      CARD_BULKHEAD_MAX: ${CARD_BULKHEAD_MAX:-48}
+      CARD_CB_FAILURE_RATE: ${CARD_CB_FAILURE_RATE:-50}
+      CARD_CB_SLOW_RATE: ${CARD_CB_SLOW_RATE:-50}
+      CARD_CB_SLOW_DURATION: ${CARD_CB_SLOW_DURATION:-1s}
+      CARD_CB_MIN_CALLS: ${CARD_CB_MIN_CALLS:-100}
     volumes:
       - recon-files:/recon-files
     depends_on:
