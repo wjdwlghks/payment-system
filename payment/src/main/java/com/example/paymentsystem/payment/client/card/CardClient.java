@@ -44,6 +44,25 @@ public class CardClient {
                 .body(CardCaptureResponse.class));
     }
 
+    /**
+     * 승인취소. <b>조회와 마찬가지로 Bulkhead/서킷으로 감싸지 않는다.</b>
+     *
+     * <p>로컬 거절은 {@code ExternalCallExecutor}에서 확정 실패로 분류되는데, 취소에서 그건
+     * 치명적이다. 취소는 "다시 시작하면 되는" 요청이 아니라 이미 승인된 결제를 되돌리는
+     * <b>유일한 출구</b>라, 여기서 막히면 카드사에 승인이 살아 있는 채로 갈 곳이 없어진다.
+     * 결제 실패는 사용자가 다시 결제하면 되지만 취소 실패는 그런 우회로가 없다.
+     *
+     * <p>보호 장치를 떼도 안전한 이유는 조회와 같다 — 취소는 저빈도이고, 커넥션 풀의
+     * per-route 상한이 물리적 방어선으로 남는다.
+     */
+    public CardCancelResponse cancel(CardCompany company, String approvalId, CardCancelRequest request) {
+        return restClient(company).post()
+                .uri("/v1/approvals/{approvalId}/cancel", approvalId)
+                .body(request)
+                .retrieve()
+                .body(CardCancelResponse.class);
+    }
+
     // ── 조회(inquiry)는 의도적으로 감싸지 않는다 ─────────────────────────────
     //
     // 조회를 Bulkhead/서킷으로 막으면 그 거절이 ExternalCallExecutor에서 확정 실패로

@@ -29,6 +29,7 @@ public class PaymentService {
     private final ApproveExecutionService approveExecutionService;
     private final CaptureCommandService captureCommandService;
     private final CaptureExecutionService captureExecutionService;
+    private final CancelService cancelService;
     private final CardClient cardClient;
     private final FdsClient fdsClient;
     private final ObjectMapper objectMapper;
@@ -94,6 +95,24 @@ public class PaymentService {
         }
 
         return captureExecutionService.capture(captureContext);
+    }
+
+    /**
+     * 승인취소. 매입 전 승인건만 대상이고, 매입이 확정된 뒤에는 환불의 영역이라 거부한다.
+     *
+     * <p>다른 단계와 달리 UNKNOWN 분기가 없다 — {@code CancelService}가 카드사 호출까지
+     * 한 트랜잭션에 넣고 확정 응답만 인정하므로, 여기서는 성공 아니면 롤백뿐이다.
+     */
+    public PaymentApiResult cancelPayment(String paymentKey) {
+        try {
+            return toApiResult(cancelService.cancel(paymentKey));
+        } catch (PaymentValidationException e) {
+            return errorResult(e.getStatusCode(), e.getMessage());
+        } catch (DataIntegrityViolationException e) {
+            PaymentIntent paymentIntent = paymentCommandService.getPaymentIntent(paymentKey);
+            String existingKey = IdempotentKeys.paymentCancel(paymentIntent.getMerchantId(), paymentKey);
+            return replayOrReject(existingKey, IdempotencyOperation.PAYMENT_CANCEL, null, "Processing cancel");
+        }
     }
 
     private PaymentApiResult handleAuthResponse(

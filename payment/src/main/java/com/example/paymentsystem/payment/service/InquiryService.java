@@ -82,6 +82,10 @@ public class InquiryService {
             case FDS -> inquiryFds(transaction);
             case APPROVE -> inquiryApprove(transaction);
             case CAPTURE -> inquiryCapture(transaction);
+            // 취소는 조회하지 않는다. UNKNOWN이 될 수 없기 때문이다 —
+            // CancelService가 확정 응답만 인정하고 나머지는 롤백하므로, 이 타입의 행은
+            // 생성되는 그 트랜잭션에서 곧바로 SUCCEEDED가 된다. 여기 걸릴 일이 없다.
+            case CANCEL -> { }
         }
     }
 

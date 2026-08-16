@@ -16,6 +16,7 @@ public class PaymentFailureConfig {
                 "card_auth",    Pattern.compile("^POST /v1/authentications$"),
                 "card_approve", Pattern.compile("^POST /v1/authentications/[^/]+/approve$"),
                 "card_capture", Pattern.compile("^POST /v1/approvals/[^/]+/capture$"),
+                "card_cancel",  Pattern.compile("^POST /v1/approvals/[^/]+/cancel$"),
                 "fds_check",    Pattern.compile("^POST /v1/fraud-checks$")
         );
         return new FailureAliasPatterns(patterns);

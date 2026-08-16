@@ -31,6 +31,8 @@ public class WebhookService {
     private static final String WEBHOOK_DONE = "done";
     private static final String WEBHOOK_CAPTURED = "captured";
     private static final String WEBHOOK_FAILED = "failed";
+    private static final String WEBHOOK_EXPIRED = "expired";
+    private static final String WEBHOOK_CANCELED = "canceled";
 
 
     /**
@@ -84,6 +86,21 @@ public class WebhookService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void saveCaptureFailed(PaymentIntent paymentIntent) {
         save(paymentIntent, WEBHOOK_FAILED, STAGE_CAPTURE);
+    }
+
+    /**
+     * 승인 요청이 오지 않아 만료됐다. {@code failed}가 아닌 별도 이벤트인 이유는
+     * 실패한 적이 없기 때문이다 — 가맹점은 이 둘에 다르게 반응해야 한다
+     * (거절은 재시도 불가, 만료는 새 결제를 시작하면 된다).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void saveExpired(PaymentIntent paymentIntent) {
+        save(paymentIntent, WEBHOOK_EXPIRED, null);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void saveCanceled(PaymentIntent paymentIntent) {
+        save(paymentIntent, WEBHOOK_CANCELED, null);
     }
 
 

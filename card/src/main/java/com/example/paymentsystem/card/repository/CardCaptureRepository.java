@@ -12,6 +12,8 @@ public interface CardCaptureRepository extends JpaRepository<CardCapture, Long> 
 
     Optional<CardCapture> findByCardRequestRef(String cardRequestRef);
 
+    boolean existsByApprovalId(String approvalId);
+
     List<CardCapture> findByStatusIn(List<CardCaptureStatus> statuses);
 
     @Query("SELECT c.cardRequestRef FROM CardCapture c WHERE c.status = :status")

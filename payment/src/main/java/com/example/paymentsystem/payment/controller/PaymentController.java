@@ -41,4 +41,12 @@ public class PaymentController {
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.body());
     }
+
+    @PostMapping("/{paymentKey}/cancel")
+    public ResponseEntity<String> cancelPayment(@PathVariable String paymentKey) {
+        PaymentApiResult result = paymentService.cancelPayment(paymentKey);
+        return ResponseEntity.status(result.statusCode())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(result.body());
+    }
 }

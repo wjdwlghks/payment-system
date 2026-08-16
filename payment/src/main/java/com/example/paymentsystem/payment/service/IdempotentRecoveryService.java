@@ -44,6 +44,10 @@ public class IdempotentRecoveryService {
             case PAYMENT_REQUEST -> recoverPaymentRequest(key.getIdempotentKey());
             case PAYMENT_APPROVE -> recoverPaymentApprove(key.getIdempotentKey());
             case PAYMENT_CAPTURE -> recoverPaymentCapture(key.getIdempotentKey());
+            // 취소 키는 PROCESSING으로 남을 수 없다. 삽입·카드사 호출·완결이 한 트랜잭션이라
+            // 완결되지 못한 키는 롤백으로 사라진다. 여기 오면 그 전제가 깨진 것이므로,
+            // 상태를 추측해 완결하지 말고 그대로 두어 눈에 띄게 한다.
+            case PAYMENT_CANCEL -> Optional.<RecoveryOutcome>empty();
         };
         if (outcome.isEmpty()) {
             return;

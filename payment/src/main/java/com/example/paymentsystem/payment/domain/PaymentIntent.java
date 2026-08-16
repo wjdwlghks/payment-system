@@ -145,5 +145,38 @@ public class PaymentIntent {
         this.status = PaymentIntentStatus.UNKNOWN_APPROVE;
     }
 
+    /**
+     * 만료 선행조건 — 인증·FDS까지 끝났는데 승인 요청이 오지 않은 상태.
+     *
+     * <p>{@code FDS_PASSED}만 대상이다. {@code APPROVE_REQUESTED} 이후는 카드사에 요청이
+     * 나갔다는 뜻이라 만료가 아니라 조회(inquiry)가 결론을 내야 한다.
+     */
+    public boolean isExpirable() {
+        return this.status == PaymentIntentStatus.FDS_PASSED;
+    }
 
+    public void markExpired() {
+        if (!isExpirable()) {
+            throw new IllegalStateException("Cannot expire: intent status is " + this.status);
+        }
+        this.status = PaymentIntentStatus.EXPIRED;
+    }
+
+    /**
+     * 취소 선행조건 — 승인이 확정된 결제. <b>매입 여부는 여기서 판정하지 않는다.</b>
+     *
+     * <p>매입은 {@code PaymentIntent.status}를 바꾸지 않기 때문이다(설계상 CAPTURE
+     * 트랜잭션으로만 추적한다). 그래서 "이미 매입됐는가"는 CAPTURE tx를 직접 봐야 하고,
+     * 그 판정은 {@code CancelService}가 한다.
+     */
+    public boolean isCancelable() {
+        return this.status == PaymentIntentStatus.APPROVED;
+    }
+
+    public void markCanceled() {
+        if (!isCancelable()) {
+            throw new IllegalStateException("Cannot cancel: intent status is " + this.status);
+        }
+        this.status = PaymentIntentStatus.CANCELED;
+    }
 }

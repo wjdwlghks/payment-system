@@ -38,6 +38,9 @@ services:
       CARD_CB_SLOW_RATE: ${CARD_CB_SLOW_RATE:-50}
       CARD_CB_SLOW_DURATION: ${CARD_CB_SLOW_DURATION:-1s}
       CARD_CB_MIN_CALLS: ${CARD_CB_MIN_CALLS:-100}
+      # FDS_PASSED 만료. 검증할 때는 짧게 줄여서 돌린다 (기본 15분 / 60초 스캔).
+      EXPIRY_FDS_PASSED_TTL_MS: ${EXPIRY_FDS_PASSED_TTL_MS:-900000}
+      EXPIRY_SCAN_INTERVAL_MS: ${EXPIRY_SCAN_INTERVAL_MS:-60000}
     volumes:
       - recon-files:/recon-files
     depends_on:

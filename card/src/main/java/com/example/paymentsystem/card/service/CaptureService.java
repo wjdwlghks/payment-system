@@ -5,7 +5,9 @@ import com.example.paymentsystem.card.domain.CardCaptureStatus;
 import com.example.paymentsystem.card.dto.ApiResult;
 import com.example.paymentsystem.card.dto.CaptureInquiryResponse;
 import com.example.paymentsystem.card.dto.CaptureResponse;
+import com.example.paymentsystem.card.dto.ErrorResponse;
 import com.example.paymentsystem.card.repository.CardAuthenticationRepository;
+import com.example.paymentsystem.card.repository.CardCancelRepository;
 import com.example.paymentsystem.card.repository.CardCaptureRepository;
 import java.time.Instant;
 import java.util.UUID;
@@ -19,6 +21,7 @@ import tools.jackson.databind.ObjectMapper;
 public class CaptureService {
 
     private final CardCaptureRepository captureRepository;
+    private final CardCancelRepository cancelRepository;
     private final CardAuthenticationRepository authenticationRepository;
     private final ObjectMapper objectMapper;
 
@@ -28,6 +31,15 @@ public class CaptureService {
     public ApiResult capture(String approvalId, String cardRequestRef, Long amount) {
         authenticationRepository.findByApprovalId(approvalId)
                 .orElseThrow(() -> new IllegalArgumentException("Approval not found: " + approvalId));
+
+        // 취소된 승인은 매입할 수 없다. PG도 같은 판정을 하지만 그쪽 상태를 믿지 않는다 —
+        // 매입과 취소가 진짜로 동시에 도착하면 PG의 가드는 둘 다 통과시킬 수 있고,
+        // 그때 누가 이길지는 여기서만 결정된다.
+        if (cancelRepository.existsByApprovalId(approvalId)) {
+            String body = objectMapper.writeValueAsString(
+                    new ErrorResponse("Approval already canceled: " + approvalId));
+            return new ApiResult(409, body);
+        }
 
         CardCapture capture = CardCapture.builder()
                 .captureId("capture-" + UUID.randomUUID())

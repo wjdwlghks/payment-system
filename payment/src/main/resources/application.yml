@@ -7,7 +7,7 @@ spring:
         # 기본값 1이면 @Scheduled 6개가 한 스레드를 공유해, 느린 틱 하나가 나머지를 전부 막는다.
         # (예: 카드사가 응답을 안 주면 inquiry 한 틱이 300건 x 3s socket timeout까지 늘어지고
         #  그동안 웹훅 배달도 잔액 플러시도 정지한다.)
-        # 스케줄 메서드 수(6) + 여유. 서로 다른 스케줄러만 겹치고, 같은 메서드는
+        # 스케줄 메서드 수(7) + 여유. 서로 다른 스케줄러만 겹치고, 같은 메서드는
         # ScheduledThreadPoolExecutor가 여전히 자기 자신과 겹치지 않게 보장한다.
         size: 8
   datasource:
@@ -85,3 +85,10 @@ payment:
     base-url: ${FDS_BASE_URL:http://fds:8080}
   webhook:
     merchant-base-url: ${MERCHANT_BASE_URL:http://merchant:8080}
+  expiry:
+    # 인증까지 끝난 결제가 승인 요청을 기다려주는 시간. 실제 결제창 세션 수명(10~15분)에 맞춘다.
+    # 이 시간이 지나면 EXPIRED가 되고, 이후 승인 요청은 422로 거절된다.
+    # 카드사에 알릴 것은 없다 — 인증은 한도를 잡지 않는다.
+    fds-passed-ttl-ms: ${EXPIRY_FDS_PASSED_TTL_MS:900000}
+    # "승인 요청이 안 왔다"를 알려주는 이벤트가 없어 주기 스캔이 유일한 발견 수단이다.
+    scan-interval-ms: ${EXPIRY_SCAN_INTERVAL_MS:60000}

@@ -209,6 +209,10 @@ public class PaymentFlow {
                     recorder.fail(orderId);
                 }
             }
+            // 이 흐름은 취소를 호출하지 않고, 만료도 승인을 즉시 거는 여기서는 나오지 않는다.
+            // 그래도 도달하면 결제가 완주하지 못한 것이므로 닫아준다 — 안 닫으면 recorder에
+            // 영원히 미결로 남아 완주율 분모만 갉아먹는다.
+            case "expired", "canceled" -> recorder.fail(orderId);
             default -> log.debug("unhandled webhook eventType={}", request.eventType());
         }
     }
