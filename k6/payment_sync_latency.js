@@ -214,8 +214,12 @@ export const options = {
 };
 
 export function setup() {
+  // 아픈 카드사 주입이 먼저다. PROB=0은 "균일 카오스 없음"이지 "장애 없음"이 아니다 —
+  // 정상 카드사를 완전히 깨끗하게 두고 한 곳만 아프게 하는 전파 실험이 바로 그 조합이다.
+  injectSickCard();
+
   if (PROB <= 0) {
-    console.log('[setup] PROB=0 — 장애 주입 없음 (baseline)');
+    console.log('[setup] PROB=0 — 균일 카오스 없음');
     return;
   }
 
@@ -237,7 +241,6 @@ export function setup() {
   const effective = (100 * (1 - Math.pow(1 - PROB, 4))).toFixed(1);
   console.log(`[setup] prob=${PROB} per rule, 4 rules -> ~${effective}% per stage`);
   console.log(`[setup] cards=${CARDS.join(',')} · capture failure=${CAPTURE_FAILURE}`);
-  injectSickCard();
 }
 
 /**

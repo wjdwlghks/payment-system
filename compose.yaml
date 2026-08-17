@@ -43,6 +43,9 @@ services:
       CARD_MAX_CONN_TOTAL: ${CARD_MAX_CONN_TOTAL:-256}
       # true = 카드사들이 풀 하나를 공유(격리 없음). 전파 관측용.
       CARD_SHARED_POOL: ${CARD_SHARED_POOL:-false}
+      # 원장 잔액 반영 방식. 락 경합 A/B/C 측정용이고 운영 기본값은 SNAPSHOT이다.
+      LEDGER_BALANCE_MODE: ${LEDGER_BALANCE_MODE:-SNAPSHOT}
+      LEDGER_SHARD_COUNT: ${LEDGER_SHARD_COUNT:-16}
       # FDS_PASSED 만료. 검증할 때는 짧게 줄여서 돌린다 (기본 15분 / 60초 스캔).
       EXPIRY_FDS_PASSED_TTL_MS: ${EXPIRY_FDS_PASSED_TTL_MS:-900000}
       EXPIRY_SCAN_INTERVAL_MS: ${EXPIRY_SCAN_INTERVAL_MS:-60000}

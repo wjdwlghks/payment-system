@@ -94,6 +94,14 @@ payment:
     # 한 카드사가 풀을 통째로 삼킬 수 있는 상태, 즉 **격리 이전의 모습**이다.
     # 장애 전파를 관측하기 위한 측정 전용 스위치이며 운영 기본값은 false다.
     shared-pool: ${CARD_SHARED_POOL:false}
+  ledger:
+    # 매입 기표가 계정 잔액을 언제 반영하는가. 측정용 스위치다 (LedgerBalanceMode 참고).
+    #   SNAPSHOT  원장 entry만 INSERT, 잔액은 AccountBalanceFlusher가 갱신 — 운영 기본값
+    #   INLINE    기표와 같은 트랜잭션에서 UPDATE — 글로벌 계정 한 행에 매입이 직렬화된다
+    #   SHARDED   INLINE과 같되 글로벌 계정을 16버킷으로 쪼갠다
+    balance-mode: ${LEDGER_BALANCE_MODE:SNAPSHOT}
+    # V36이 만들어 둔 샤드 행 수와 반드시 같아야 한다. 올리면 없는 샤드를 찾다가 터진다.
+    shard-count: ${LEDGER_SHARD_COUNT:16}
   fds:
     base-url: ${FDS_BASE_URL:http://fds:8080}
   webhook:

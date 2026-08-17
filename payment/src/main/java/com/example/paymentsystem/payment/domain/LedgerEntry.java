@@ -76,6 +76,16 @@ public class LedgerEntry {
         this(null, account, direction, amount, entryType);
     }
 
+    /**
+     * 이 entry가 계정 잔액에 이미 반영됐다고 표시한다.
+     *
+     * <p>인라인 모드에서 쓴다 — 기표와 같은 트랜잭션에서 잔액을 올렸으므로,
+     * 표시하지 않으면 {@code AccountBalanceFlusher}가 같은 금액을 한 번 더 더한다.
+     */
+    public void markApplied() {
+        this.applied = true;
+    }
+
     public void assignPosting(LedgerPosting posting) {
         if (this.posting != null) {
             throw new IllegalStateException("posting already assigned");
