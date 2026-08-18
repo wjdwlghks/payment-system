@@ -75,6 +75,22 @@ const started   = new Counter('payments_started');
 const completed = new Counter('payments_completed'); // 매입까지 동기로 완주
 
 // ── 장애 주입 ────────────────────────────────────────────────
+// 단계별 주입 대상. alias는 서비스마다 다르고, 틀린 alias는 200을 주면서 아무것도 주입하지
+// 않는다 — 그러면 "장애를 맞고도 멀쩡했다"가 아니라 "장애가 안 걸렸다"인데 구별이 안 된다.
+// 그래서 이름은 여기 한 곳에만 두고, 아래 setup에서 모르는 단계는 즉시 중단시킨다.
+const STAGE_TARGETS = {
+  auth:    { servers: [[CARD_A, 'auth'], [CARD_B, 'auth']],       paymentAlias: 'card_auth' },
+  fds:     { servers: [[FDS, 'fds_check']],                       paymentAlias: 'fds_check' },
+  approve: { servers: [[CARD_A, 'approve'], [CARD_B, 'approve']], paymentAlias: 'card_approve' },
+  capture: { servers: [[CARD_A, 'capture'], [CARD_B, 'capture']], paymentAlias: 'card_capture' },
+};
+
+// 장애를 넣을 단계. 기본값은 인증·FDS·승인이고 매입은 대조군으로 남는다 —
+// 장애를 하나도 안 맞는 단계가 있어야, 이상이 보일 때 주입한 장애 탓인지 우리 쪽
+// 문제인지 가를 수 있다. 전 단계에 다 주입하면 그 대조군이 사라진다.
+const FAIL_STAGES = (__ENV.FAIL_STAGES || 'auth,fds,approve')
+    .split(',').map(s => s.trim()).filter(s => s.length > 0);
+
 function injectServerFailures(baseUrl, endpoint) {
   ['TIMEOUT_BEFORE_PROCESS', 'TIMEOUT_AFTER_PROCESS', 'ERROR_500'].forEach(failure => {
     http.post(`${baseUrl}/admin/failure`, JSON.stringify({
@@ -105,20 +121,23 @@ export const options = {
 };
 
 export function setup() {
-  // 인증·승인만. 매입(card의 'capture', payment의 'card_capture')은 대조군으로 남긴다.
-  [CARD_A, CARD_B].forEach(card => {
-    injectServerFailures(card, 'auth');
-    injectServerFailures(card, 'approve');
+  const unknown = FAIL_STAGES.filter(stage => !STAGE_TARGETS[stage]);
+  if (unknown.length > 0) {
+    throw new Error(`unknown FAIL_STAGES: ${unknown.join(',')} `
+        + `(choose from ${Object.keys(STAGE_TARGETS).join(',')})`);
+  }
+
+  FAIL_STAGES.forEach(stage => {
+    const target = STAGE_TARGETS[stage];
+    target.servers.forEach(([baseUrl, endpoint]) => injectServerFailures(baseUrl, endpoint));
+    injectConnectFailure(target.paymentAlias);
   });
-  injectServerFailures(FDS, 'fds_check');
 
-  injectConnectFailure('card_auth');
-  injectConnectFailure('fds_check');
-  injectConnectFailure('card_approve');
-
+  const control = Object.keys(STAGE_TARGETS).filter(s => !FAIL_STAGES.includes(s));
   const effective = (100 * (1 - Math.pow(1 - PROB, 4))).toFixed(1);
-  console.log(`[setup] prob=${PROB} per rule x 4 rules -> ~${effective}% per stage on auth/fds/approve`);
-  console.log(`[setup] capture is the control — no failure injected`);
+  console.log(`[setup] prob=${PROB} per rule x 4 rules -> ~${effective}% per stage `
+      + `on ${FAIL_STAGES.join('/')}`);
+  console.log(`[setup] control (no failure injected): ${control.join('/') || 'none'}`);
 }
 
 export function teardown() {
@@ -262,8 +281,8 @@ export function handleSummary(data) {
       tps: TPS,
       duration: DURATION,
       prob: PROB,
-      failureStages: ['auth', 'fds', 'approve'],
-      controlStage: 'capture',
+      failureStages: FAIL_STAGES,
+      controlStages: Object.keys(STAGE_TARGETS).filter(s => !FAIL_STAGES.includes(s)),
       effectiveFailureRatePerStagePct: Math.round(1000 * (1 - Math.pow(1 - PROB, 4))) / 10,
       resumeTimeoutMs: RESUME_TIMEOUT_MS,
     },
